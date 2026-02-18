@@ -56,7 +56,7 @@ describe('Worker Entry Point (index.ts)', () => {
     it('handles setup-webhook endpoint', async () => {
         // Mock the global fetch for Telegram API call
         const mockResponse = new Response('{"ok":true}', { status: 200 });
-        const globalFetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(mockResponse);
+        const globalFetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockResponse);
 
         const request = new Request('https://example.com/setup-webhook');
         const response = await worker.fetch(request, env, {} as any);
