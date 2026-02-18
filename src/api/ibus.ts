@@ -18,11 +18,13 @@ export async function getGuestToken(): Promise<string> {
 
     const resp = await fetch(`${IBUS_BASE_URL}/Token/GuestToken`);
     if (!resp.ok) {
+        console.error(`[iBus] GuestToken failed: ${resp.status}`, await resp.text());
         throw new Error(`Failed to get GuestToken: ${resp.status} ${resp.statusText}`);
     }
 
     const data = await resp.json() as GuestTokenResponse;
     const token = data.token;
+    console.log('[iBus] GuestToken acquired.');
 
     // Cache for 30 minutes (we don't know exact expiry, so be conservative)
     cachedToken = {
@@ -60,12 +62,15 @@ export async function getEstimateTime(
     if (!resp.ok) {
         // If 401, clear cached token and retry once
         if (resp.status === 401 && cachedToken) {
+            console.warn('[iBus] 401 Unauthorized. Clearing token and retrying...');
             cachedToken = null;
             return getEstimateTime(routes);
         }
+        console.error(`[iBus] CustomEstimateTime failed: ${resp.status}`, await resp.text());
         throw new Error(`CustomEstimateTime failed: ${resp.status} ${resp.statusText}`);
     }
 
     const data = await resp.json() as EstimateTimeItem[];
+    console.log(`[iBus] Successfully fetched ${data?.length || 0} arrival items.`);
     return Array.isArray(data) ? data : [];
 }

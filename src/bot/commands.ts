@@ -336,10 +336,21 @@ async function handleGoWithDirection(
 ): Promise<void> {
     const token = env.TELEGRAM_BOT_TOKEN;
     const setting = await getUserSetting(env.USER_SETTINGS, chatId);
-    if (!setting) return;
+    if (!setting) {
+        console.error(`[/go] No settings found for chatId: ${chatId}`);
+        await sendMessage(token, chatId, '⚠️ 找不到你的設定資料，請先輸入 /setup 重新設定。');
+        return;
+    }
 
     try {
+        console.log(`[/go] Start query for ${chatId}, direction: ${commute}`);
         const { origin, destination } = getCommuteStops(setting, commute);
+
+        if (!setting.matchedRoutes || setting.matchedRoutes.length === 0) {
+            console.warn(`[/go] No matched routes for ${chatId}`);
+            await sendMessage(token, chatId, `📍 ${origin} → ${destination}\n\n⚠️ 目前沒有符合的路線資料，請重新 /setup。`);
+            return;
+        }
 
         // Build API requests for all matched routes
         const requests = setting.matchedRoutes.map((route) => ({
@@ -347,9 +358,11 @@ async function handleGoWithDirection(
             direction: getCommuteDirection(route, commute),
         }));
 
+        console.log(`[/go] Fetching arrival times for ${requests.length} routes...`);
         const arrivals = await getEstimateTime(requests);
         const label = getCommuteLabel(commute);
 
+        console.log(`[/go] Formatting ${arrivals.length} arrival items...`);
         const msg = formatCommuteArrival(
             arrivals,
             origin,
@@ -359,8 +372,10 @@ async function handleGoWithDirection(
         );
 
         await sendMessage(token, chatId, msg, directionToggleKeyboard(commute));
-    } catch (err) {
-        await sendMessage(token, chatId, '⚠️ 查詢失敗，請稍後再試');
+    } catch (err: any) {
+        console.error('[/go] Error details:', err);
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        await sendMessage(token, chatId, `⚠️ 查詢失敗\n\n原因: ${errorMsg}\n請稍後再試或檢查 npx wrangler tail 日誌。`);
     }
 }
 
