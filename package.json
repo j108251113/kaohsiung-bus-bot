@@ -1,0 +1,19 @@
+{
+    "name": "kaohsiung-bus-bot",
+    "version": "1.0.0",
+    "description": "高雄公車到站查詢 Telegram Bot（Cloudflare Workers）",
+    "main": "src/index.ts",
+    "scripts": {
+        "dev": "wrangler dev",
+        "deploy": "wrangler deploy",
+        "test": "vitest run",
+        "test:watch": "vitest"
+    },
+    "dependencies": {},
+    "devDependencies": {
+        "@cloudflare/workers-types": "^4.20240620.0",
+        "typescript": "^5.5.0",
+        "vitest": "^2.0.0",
+        "wrangler": "^3.60.0"
+    }
+}
