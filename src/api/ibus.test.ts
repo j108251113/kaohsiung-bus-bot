@@ -7,18 +7,21 @@ describe('iBus+ API Wrapper', () => {
         vi.stubGlobal('fetch', vi.fn());
     });
 
-    it('getGuestToken: should fetch and return a token', async () => {
+    it('getGuestToken: should fetch and return a token via POST', async () => {
         const { getGuestToken } = await import('./ibus');
         vi.stubGlobal('fetch', vi.fn(() =>
             Promise.resolve({
                 ok: true,
-                json: () => Promise.resolve({ token: 'mock-jwt' })
+                json: () => Promise.resolve({ access_token: 'mock-jwt', expires_in: 3600 })
             } as any)
         ));
 
         const token = await getGuestToken();
         expect(token).toBe('mock-jwt');
-        expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/Token/GuestToken'));
+        expect(fetch).toHaveBeenCalledWith(
+            expect.stringContaining('/Token/GuestToken'),
+            expect.objectContaining({ method: 'POST' })
+        );
     });
 
     it('getEstimateTime: should retry once on 401', async () => {
@@ -29,7 +32,7 @@ describe('iBus+ API Wrapper', () => {
             if (url.includes('/Token/GuestToken')) {
                 return Promise.resolve({
                     ok: true,
-                    json: () => Promise.resolve({ token: `token-${callCount}` })
+                    json: () => Promise.resolve({ access_token: `token-${callCount}`, expires_in: 3600 })
                 } as any);
             }
 

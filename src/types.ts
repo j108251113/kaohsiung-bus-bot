@@ -11,8 +11,10 @@ export interface Env {
  * iBus+ GuestToken response
  */
 export interface GuestTokenResponse {
-    token: string;
-    expiration?: string;
+    token_type: string;
+    access_token: string;
+    expires_in: number;
+    scope?: string;
 }
 
 /**

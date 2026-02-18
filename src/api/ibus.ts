@@ -16,20 +16,31 @@ export async function getGuestToken(): Promise<string> {
         return cachedToken.token;
     }
 
-    const resp = await fetch(`${IBUS_BASE_URL}/Token/GuestToken`);
+    const resp = await fetch(`${IBUS_BASE_URL}/Token/GuestToken`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json, text/plain, */*',
+            'Origin': 'https://ibusplus.tbkc.gov.tw',
+            'Referer': 'https://ibusplus.tbkc.gov.tw/',
+        },
+        body: JSON.stringify({}),
+    });
+
     if (!resp.ok) {
         console.error(`[iBus] GuestToken failed: ${resp.status}`, await resp.text());
         throw new Error(`Failed to get GuestToken: ${resp.status} ${resp.statusText}`);
     }
 
     const data = await resp.json() as GuestTokenResponse;
-    const token = data.token;
+    const token = data.access_token;
     console.log('[iBus] GuestToken acquired.');
 
-    // Cache for 30 minutes (we don't know exact expiry, so be conservative)
+    // Use expires_in from response (usually 3600s), default to 30 mins if missing
+    const lifeTime = (data.expires_in || 1800) * 1000;
     cachedToken = {
         token,
-        expiresAt: Date.now() + 30 * 60 * 1000,
+        expiresAt: Date.now() + lifeTime,
     };
 
     return token;
