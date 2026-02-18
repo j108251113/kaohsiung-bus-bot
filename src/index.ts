@@ -2,7 +2,7 @@ import type { Env, TelegramUpdate } from './types';
 import { handleMessage, handleCallbackQuery } from './bot/commands';
 
 export default {
-    async fetch(request: Request, env: Env): Promise<Response> {
+    async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
         const url = new URL(request.url);
 
         // Health check endpoint
@@ -18,14 +18,9 @@ export default {
             try {
                 const update = await request.json() as TelegramUpdate;
 
-                // Process in the background to respond quickly to Telegram
                 if (update.message) {
-                    // Use waitUntil to handle the request asynchronously
-                    // This ensures Telegram gets a 200 immediately
-                    const ctx = { waitUntil: (p: Promise<unknown>) => p };
                     ctx.waitUntil(handleMessage(env, update.message));
                 } else if (update.callback_query) {
-                    const ctx = { waitUntil: (p: Promise<unknown>) => p };
                     ctx.waitUntil(handleCallbackQuery(env, update.callback_query));
                 }
 
