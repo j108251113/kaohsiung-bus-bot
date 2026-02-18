@@ -19,9 +19,17 @@ export default {
                 const update = await request.json() as TelegramUpdate;
 
                 if (update.message) {
-                    ctx.waitUntil(handleMessage(env, update.message));
+                    ctx.waitUntil(
+                        handleMessage(env, update.message).catch(err => {
+                            console.error('handleMessage error:', err);
+                        })
+                    );
                 } else if (update.callback_query) {
-                    ctx.waitUntil(handleCallbackQuery(env, update.callback_query));
+                    ctx.waitUntil(
+                        handleCallbackQuery(env, update.callback_query).catch(err => {
+                            console.error('handleCallbackQuery error:', err);
+                        })
+                    );
                 }
 
                 return new Response('OK', { status: 200 });

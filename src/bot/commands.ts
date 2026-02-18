@@ -22,16 +22,21 @@ async function sendMessage(
     text: string,
     replyMarkup?: InlineKeyboardMarkup,
 ): Promise<void> {
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    const url = `https://api.telegram.org/bot${token}/sendMessage`;
+    console.log(`Sending message to ${chatId}: ${text.slice(0, 50)}...`);
+    const resp = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             chat_id: chatId,
             text,
             reply_markup: replyMarkup,
-            parse_mode: undefined, // plain text, most reliable for CJK
+            parse_mode: undefined,
         }),
     });
+    if (!resp.ok) {
+        console.error(`Telegram API error: ${resp.status} ${await resp.text()}`);
+    }
 }
 
 /**
@@ -63,6 +68,8 @@ export async function handleMessage(
     const text = (message.text || '').trim();
     const token = env.TELEGRAM_BOT_TOKEN;
 
+    console.log(`Received message from ${chatId}: "${text}"`);
+
     // Parse command
     if (text === '/start') {
         return handleStart(token, chatId);
@@ -91,11 +98,13 @@ export async function handleMessage(
 
     // Check if user is in setup flow (typed a stop name)
     const setupState = await getSetupState(env.USER_SETTINGS, chatId);
+    console.log(`Current setup state for ${chatId}:`, setupState);
     if (setupState) {
         return handleSetupTextInput(env, chatId, text);
     }
 
     // Unknown command
+    console.log(`Unknown command from ${chatId}: ${text}`);
     await sendMessage(token, chatId, '🤔 看不懂你的指令\n\n輸入 /help 查看使用說明');
 }
 

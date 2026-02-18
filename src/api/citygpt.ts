@@ -92,30 +92,29 @@ export async function getStops(routeId: string, direction: number): Promise<Stop
  * Returns unique stops (deduplicated by name).
  */
 export async function searchStops(keyword: string): Promise<{ id: string; name: string }[]> {
-    const allRoutes = await getAllRoutes();
-    const normalized = keyword.trim().toLowerCase();
+    const normalized = keyword.trim();
+    if (!normalized) return [];
+
+    // Use direct OData filter to find stops by name
+    const filter = encodeURIComponent(`contains(stopname_zh_tw, '${normalized}')`);
+    const resp = await fetch(
+        `${CITYGPT_BASE_URL}/v_stg_tdx_stop?filter=${filter}&top=100`,
+        { headers: HEADERS },
+    );
+
+    if (!resp.ok) {
+        throw new Error(`Failed to search stops: ${resp.status}`);
+    }
+
+    const json = await resp.json() as CityGPTResponse<Stop> | Stop[];
+    const data = Array.isArray(json) ? json : json.data;
+
     const seen = new Map<string, { id: string; name: string }>();
-
-    // Fetch stops for a subset of routes to keep API calls reasonable
-    // We search direction 0 and 1 for all routes
-    for (const route of allRoutes) {
-        for (const dir of [0, 1]) {
-            try {
-                const stops = await getStops(route.routeid, dir);
-                for (const stop of stops) {
-                    const stopName = stop.stopname_zh_tw || '';
-                    if (stopName.toLowerCase().includes(normalized) && !seen.has(stopName)) {
-                        seen.set(stopName, { id: stop.stopid, name: stopName });
-                    }
-                }
-            } catch {
-                // Skip errors for individual routes
-            }
-
-            // Limit to first 100 unique matches
-            if (seen.size >= 100) break;
+    for (const stop of data) {
+        const name = stop.stopname_zh_tw;
+        if (!seen.has(name)) {
+            seen.set(name, { id: stop.stopid, name });
         }
-        if (seen.size >= 100) break;
     }
 
     return Array.from(seen.values());
@@ -134,7 +133,25 @@ export async function findRoutesConnecting(
     toWorkDirection: number;
     toHomeDirection: number;
 }[]> {
-    const allRoutes = await getAllRoutes();
+    // 1. Find all stops matching homeStopName
+    // 2. Find all stops matching workStopName
+    // 3. Find common routeid and check sequence
+    const homeFilter = encodeURIComponent(`stopname_zh_tw eq '${homeStopName}'`);
+    const workFilter = encodeURIComponent(`stopname_zh_tw eq '${workStopName}'`);
+
+    const [homeResp, workResp, allRoutes] = await Promise.all([
+        fetch(`${CITYGPT_BASE_URL}/v_stg_tdx_stop?filter=${homeFilter}&top=1000`, { headers: HEADERS }),
+        fetch(`${CITYGPT_BASE_URL}/v_stg_tdx_stop?filter=${workFilter}&top=1000`, { headers: HEADERS }),
+        getAllRoutes()
+    ]);
+
+    if (!homeResp.ok || !workResp.ok) {
+        throw new Error('Failed to fetch stop data for connection search');
+    }
+
+    const homeData = await homeResp.json().then((j: any) => Array.isArray(j) ? j : j.data) as Stop[];
+    const workData = await workResp.json().then((j: any) => Array.isArray(j) ? j : j.data) as Stop[];
+
     const results: {
         routeId: string;
         routeName: string;
@@ -142,32 +159,26 @@ export async function findRoutesConnecting(
         toHomeDirection: number;
     }[] = [];
 
-    for (const route of allRoutes) {
-        for (const dir of [0, 1] as const) {
-            try {
-                const stops = await getStops(route.routeid, dir);
-                const homeIdx = stops.findIndex(
-                    (s) => s.stopname_zh_tw === homeStopName,
-                );
-                const workIdx = stops.findIndex(
-                    (s) => s.stopname_zh_tw === workStopName,
-                );
+    // Map work stops by routeId and direction for fast lookup
+    const workMap = new Map<string, Stop>();
+    for (const s of workData) {
+        workMap.set(`${s.routeid}:${s.direction}`, s);
+    }
 
-                if (homeIdx !== -1 && workIdx !== -1 && homeIdx < workIdx) {
-                    // This direction goes from home → work
-                    const oppositeDir = dir === 0 ? 1 : 0;
-                    // Only add if not already found
-                    if (!results.find((r) => r.routeId === route.routeid)) {
-                        results.push({
-                            routeId: route.routeid,
-                            routeName: route.routename_zh_tw,
-                            toWorkDirection: dir,
-                            toHomeDirection: oppositeDir,
-                        });
-                    }
-                }
-            } catch {
-                // Skip errors
+    for (const homeStop of homeData) {
+        const key = `${homeStop.routeid}:${homeStop.direction}`;
+        const workStop = workMap.get(key);
+
+        if (workStop && homeStop.stopsequence < workStop.stopsequence) {
+            const route = allRoutes.find(r => r.routeid === homeStop.routeid);
+            if (route) {
+                const oppositeDir = homeStop.direction === 0 ? 1 : 0;
+                results.push({
+                    routeId: route.routeid,
+                    routeName: route.routename_zh_tw,
+                    toWorkDirection: homeStop.direction,
+                    toHomeDirection: oppositeDir,
+                });
             }
         }
     }
