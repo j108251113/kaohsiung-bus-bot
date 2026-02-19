@@ -146,6 +146,106 @@ describe('formatCommuteArrival', () => {
         expect(result).toContain('未發車');
     });
 
+    it('handles missing stopname (uses empty string)', () => {
+        const arrivals: EstimateTimeItem[] = [
+            {
+                stopid: '10001',
+                // stopname missing
+                routeid: '211',
+                direction: 1,
+                estimatetime: 5,
+                seqno: 5,
+            } as any,
+        ];
+
+        const result = formatCommuteArrival(
+            arrivals,
+            '鳳鼻頭', // Origin matching isn't possible if stopname is empty unless we match ID?
+            // The code checks: !stopName.includes(origin) && origin !== stopName
+            // If stopName is '', it won't include '鳳鼻頭'.
+            // So this entry will be filtered out.
+            // We just want to ensure it doesn't crash.
+            '小港站',
+            sampleRoutes,
+            '上班',
+        );
+
+        expect(result).not.toContain('5分鐘');
+    });
+
+    it('uses plateNumb from etas if carId is missing', () => {
+        const arrivals: EstimateTimeItem[] = [
+            {
+                stopid: '10001',
+                stopname: '鳳鼻頭',
+                routeid: '211',
+                direction: 1,
+                estimatetime: 5,
+                seqno: 5,
+                // carId missing
+                etas: [{ plateNumb: 'KKA-1234', countdownTime: 300 }]
+            } as any,
+        ];
+
+        const result = formatCommuteArrival(
+            arrivals,
+            '鳳鼻頭',
+            '小港站',
+            sampleRoutes,
+            '上班',
+        );
+
+        expect(result).toContain('KKA-1234');
+    });
+
+    it('handles missing plate number completely', () => {
+        const arrivals: EstimateTimeItem[] = [
+            {
+                stopid: '10001',
+                stopname: '鳳鼻頭',
+                routeid: '211',
+                direction: 1,
+                estimatetime: 5,
+                seqno: 5,
+                // carId and etas missing
+            } as any,
+        ];
+
+        const result = formatCommuteArrival(
+            arrivals,
+            '鳳鼻頭',
+            '小港站',
+            sampleRoutes,
+            '上班',
+        );
+
+        expect(result).toContain('5分鐘');
+        expect(result).not.toContain('🚍');
+    });
+
+    it('sorts arrivals with null estimatetime to the end', () => {
+        const arrivals: EstimateTimeItem[] = [
+            {
+                stopid: '1', stopname: '鳳鼻頭', routeid: '211', direction: 1, estimatetime: null, seqno: 1
+            },
+            {
+                stopid: '2', stopname: '鳳鼻頭', routeid: '211', direction: 1, estimatetime: 5, seqno: 2
+            },
+            {
+                stopid: '3', stopname: '鳳鼻頭', routeid: '211', direction: 1, estimatetime: null, seqno: 3
+            }
+        ];
+
+        const result = formatCommuteArrival(
+            arrivals, '鳳鼻頭', '小港站', sampleRoutes, '上班'
+        );
+
+        // 5 mins should come before nulls
+        const idx5 = result.indexOf('5分鐘');
+        const idxUnset = result.indexOf('未發車');
+        expect(idx5).toBeLessThan(idxUnset);
+    });
+
     it('includes timestamp', () => {
         const result = formatCommuteArrival(
             [],
@@ -156,6 +256,37 @@ describe('formatCommuteArrival', () => {
         );
 
         expect(result).toContain('更新');
+    });
+    it('filters out stops that do not match originStopName', () => {
+        const arrivals: EstimateTimeItem[] = [
+            {
+                stopid: '10001',
+                stopname: '鳳鼻頭(沿海路)',
+                routeid: '211',
+                direction: 1,
+                estimatetime: 5,
+                seqno: 5,
+            },
+            {
+                stopid: '99999',
+                stopname: 'Other Stop', // Should be filtered out
+                routeid: '211',
+                direction: 1,
+                estimatetime: 10,
+                seqno: 6,
+            },
+        ];
+
+        const result = formatCommuteArrival(
+            arrivals,
+            '鳳鼻頭(沿海路)', // Origin
+            '捷運小港站',
+            sampleRoutes,
+            '🏢 上班',
+        );
+
+        expect(result).toContain('5分鐘');
+        expect(result).not.toContain('10分鐘');
     });
 });
 
@@ -217,5 +348,25 @@ describe('formatRouteArrival', () => {
         // Should be within Telegram's limit
         expect(result.length).toBeLessThanOrEqual(4096);
         expect(result).toContain('僅顯示部分資料');
+    });
+    it('sorts by seqno', () => {
+        const arrivals: EstimateTimeItem[] = [
+            { stopid: '2', stopname: 'Stop 2', routeid: '1', direction: 0, estimatetime: 5, seqno: 2 },
+            { stopid: '1', stopname: 'Stop 1', routeid: '1', direction: 0, estimatetime: 10, seqno: 1 }
+        ];
+
+        const result = formatRouteArrival('R1', arrivals, 0);
+        const idx1 = result.indexOf('Stop 1');
+        const idx2 = result.indexOf('Stop 2');
+        expect(idx1).toBeLessThan(idx2);
+    });
+
+    it('handles missing stopname by using ID', () => {
+        const arrivals: EstimateTimeItem[] = [
+            { stopid: '999', routeid: '1', direction: 0, estimatetime: 5, seqno: 1 } as any
+        ];
+
+        const result = formatRouteArrival('R1', arrivals, 0);
+        expect(result).toContain('站牌 999');
     });
 });

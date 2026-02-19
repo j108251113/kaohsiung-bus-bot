@@ -66,6 +66,8 @@ export async function handleMessage(
 ): Promise<void> {
     const chatId = message.chat.id;
     const text = (message.text || '').trim();
+    if (!text) return;
+
     const token = env.TELEGRAM_BOT_TOKEN;
 
     console.log(`Received message from ${chatId}: "${text}"`);

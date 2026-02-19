@@ -7,7 +7,7 @@ compatibility_date = "2024-06-20"
 # Replace the id below with the actual ID from the output
 [[kv_namespaces]]
 binding = "USER_SETTINGS"
-id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+id = "1ce69f61180949c584e1ec632a43ccc5"
 
 # Environment variables (non-secret)
 [vars]
