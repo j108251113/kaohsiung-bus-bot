@@ -147,6 +147,22 @@ describe('CityGPT API', () => {
             expect(result.map((s: any) => s.name)).toEqual(['Stop A', 'Stop B']);
         });
 
+        it('should escape special characters in keyword', async () => {
+            globalFetch.mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ data: [] })
+            });
+
+            await citygpt.searchStops("Stop' OR '1'='1");
+
+            // Check if the URL contains the escaped single quotes (doubled)
+            // We need to match the encoded format or parts of it
+            expect(globalFetch).toHaveBeenCalledWith(
+                expect.stringContaining("Stop''%20OR%20''1''%3D''1'"),
+                expect.anything()
+            );
+        });
+
         it('should return empty for empty keyword', async () => {
             const result = await citygpt.searchStops('   ');
             expect(result).toEqual([]);

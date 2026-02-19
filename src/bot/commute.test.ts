@@ -2,10 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleMessage } from './commands';
 import * as ibus from '../api/ibus';
 import * as userStore from '../store/user';
+import * as ratelimit from '../utils/ratelimit';
 
 vi.mock('../api/ibus');
 vi.mock('../store/user');
 vi.mock('../api/citygpt');
+vi.mock('../utils/ratelimit');
 
 const globalFetch = vi.fn(() =>
     Promise.resolve({
@@ -26,6 +28,7 @@ describe('Commute Flow (/go)', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.mocked(ratelimit.checkRateLimit).mockResolvedValue(true);
         // Simulate Taiwan working hours (e.g. 09:00 AM)
         vi.setSystemTime(new Date('2024-06-20T01:00:00Z')); // 01:00 UTC = 09:00 Taiwan
     });

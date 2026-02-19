@@ -3,12 +3,14 @@ import { handleMessage, handleCallbackQuery } from './commands';
 import * as citygpt from '../api/citygpt';
 import * as ibus from '../api/ibus';
 import * as userStore from '../store/user';
+import * as ratelimit from '../utils/ratelimit';
 import { welcomeKeyboard } from './keyboard';
 
 // Mock dependencies
 vi.mock('../api/citygpt');
 vi.mock('../api/ibus');
 vi.mock('../store/user');
+vi.mock('../utils/ratelimit');
 
 // Mock global fetch
 const globalFetch = vi.fn();
@@ -28,12 +30,20 @@ describe('Bot Commands', () => {
             ok: true,
             json: async () => ({ ok: true }),
         });
+        vi.mocked(ratelimit.checkRateLimit).mockResolvedValue(true);
     });
 
     describe('handleMessage', () => {
         it('should ignore non-text messages', async () => {
             await handleMessage(env, { chat: { id: chatId } } as any);
             expect(globalFetch).not.toHaveBeenCalled();
+        });
+
+        it('should ignore messages if rate limit exceeded', async () => {
+            vi.mocked(ratelimit.checkRateLimit).mockResolvedValue(false);
+            await handleMessage(env, { chat: { id: chatId }, text: '/start' } as any);
+            expect(globalFetch).not.toHaveBeenCalled();
+            expect(ratelimit.checkRateLimit).toHaveBeenCalledWith(expect.anything(), chatId, 20);
         });
 
         it('should handle /start', async () => {

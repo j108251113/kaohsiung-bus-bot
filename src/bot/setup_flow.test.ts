@@ -2,11 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleMessage, handleCallbackQuery } from './commands';
 import * as citygpt from '../api/citygpt';
 import * as userStore from '../store/user';
+import * as ratelimit from '../utils/ratelimit';
 
 // Mock the APIs and Store
 vi.mock('../api/citygpt');
 vi.mock('../store/user');
 vi.mock('../api/ibus');
+vi.mock('../utils/ratelimit');
 
 // Mock fetch globally
 const globalFetch = vi.fn(() =>
@@ -28,6 +30,7 @@ describe('Setup Flow Integration', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.mocked(ratelimit.checkRateLimit).mockResolvedValue(true);
     });
 
     it('Flow: /setup -> Input Station Name -> Show Selection', async () => {

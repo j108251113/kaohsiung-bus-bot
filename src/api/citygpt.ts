@@ -91,12 +91,19 @@ export async function getStops(routeId: string, direction: number): Promise<Stop
  * Search for a stop by name across all routes.
  * Returns unique stops (deduplicated by name).
  */
+/**
+ * Escape OData string literal (replace ' with '').
+ */
+export function escapeOData(input: string): string {
+    return input.replace(/'/g, "''");
+}
+
 export async function searchStops(keyword: string): Promise<{ id: string; name: string }[]> {
     const normalized = keyword.trim();
     if (!normalized) return [];
 
     // Use direct OData filter to find stops by name
-    const filter = encodeURIComponent(`contains(stopname_zh_tw, '${normalized}')`);
+    const filter = encodeURIComponent(`contains(stopname_zh_tw, '${escapeOData(normalized)}')`);
     const resp = await fetch(
         `${CITYGPT_BASE_URL}/v_stg_tdx_stop?filter=${filter}&top=100`,
         { headers: HEADERS },

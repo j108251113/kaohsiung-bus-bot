@@ -12,6 +12,7 @@ import {
     stopSelectionKeyboard,
     confirmKeyboard,
 } from './keyboard';
+import { checkRateLimit } from '../utils/ratelimit';
 
 /**
  * Send a text message via Telegram Bot API.
@@ -72,6 +73,13 @@ export async function handleMessage(
 
     console.log(`Received message from ${chatId}: "${text}"`);
 
+    // Check rate limit (20 req/min for messages)
+    const allowed = await checkRateLimit(env.USER_SETTINGS, chatId, 20);
+    if (!allowed) {
+        console.warn(`Rate limit exceeded for ${chatId}`);
+        return; // Silently ignore to prevent further spam
+    }
+
     // Parse command
     if (text === '/start') {
         return handleStart(token, chatId);
@@ -122,6 +130,14 @@ export async function handleCallbackQuery(
 
     const token = env.TELEGRAM_BOT_TOKEN;
     const data = query.data;
+
+    // Check rate limit (30 req/min for callbacks - slightly higher as it's UI interaction)
+    const allowed = await checkRateLimit(env.USER_SETTINGS, chatId, 30);
+    if (!allowed) {
+        console.warn(`Rate limit exceeded for callback ${chatId}`);
+        await answerCallbackQuery(token, query.id, '⚠️ 操作太頻繁，請稍後再試');
+        return;
+    }
 
     await answerCallbackQuery(token, query.id);
 
