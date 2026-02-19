@@ -81,7 +81,39 @@ export async function getEstimateTime(
         throw new Error(`CustomEstimateTime failed: ${resp.status} ${resp.statusText}`);
     }
 
-    const data = await resp.json() as EstimateTimeItem[];
-    console.log(`[iBus] Successfully fetched ${data?.length || 0} arrival items.`);
-    return Array.isArray(data) ? data : [];
+    // The API returns { status: number, data: [ [StopInfo, ...], [StopInfo, ...] ] }
+    const json = await resp.json() as { status: number; data: any[][] };
+
+    if (!json || !Array.isArray(json.data)) {
+        console.warn('[iBus] Unexpected response format:', JSON.stringify(json).slice(0, 100));
+        return [];
+    }
+
+    // Flatten the array of arrays (one array per route/direction requested)
+    const rawItems = json.data.flat();
+
+    console.log(`[iBus] Successfully fetched ${rawItems.length} arrival items.`);
+
+    // Map to internal EstimateTimeItem format
+    return rawItems.map((item: any) => {
+        // estimatetime can be "null" string, null, or a number
+        let et: number | null = null;
+        if (typeof item.estimatetime === 'number') {
+            et = item.estimatetime;
+        } else if (typeof item.estimatetime === 'string' && item.estimatetime !== 'null') {
+            et = parseInt(item.estimatetime, 10);
+            if (isNaN(et)) et = null;
+        }
+
+        return {
+            stopid: item.stopid || item.stopID,
+            stopname: item.stopname_Zh_Tw || item.stopname,
+            routeid: item.routeid,
+            direction: parseInt(item.direction, 10),
+            estimatetime: et,
+            nextbustime: item.nextbustime,
+            carId: item.carId,
+            seqno: item.stopsequence,
+        };
+    });
 }
