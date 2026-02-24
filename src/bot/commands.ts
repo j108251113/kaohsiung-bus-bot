@@ -11,6 +11,7 @@ import {
     directionToggleKeyboard,
     stopSelectionKeyboard,
     confirmKeyboard,
+    refreshBusKeyboard,
 } from './keyboard';
 import { checkRateLimit } from '../utils/ratelimit';
 
@@ -179,6 +180,20 @@ export async function handleCallbackQuery(
         return handleSetupStart(env, chatId);
     }
 
+    // Refresh commute query (re-fetch latest arrival data, send new message)
+    if (data.startsWith('refresh:commute:')) {
+        const commute = data.replace('refresh:commute:', '') as 'toWork' | 'toHome';
+        return handleGoWithDirection(env, chatId, commute);
+    }
+
+    // Refresh bus route query (re-fetch latest arrival data, send new message)
+    if (data.startsWith('refresh:bus:')) {
+        const parts = data.split(':');
+        const routeId = parts[2];
+        const direction = parseInt(parts[3]);
+        return handleBusDirection(token, chatId, routeId, direction);
+    }
+
     // Welcome keyboard shortcuts
     if (data === 'cmd:setup') {
         return handleSetupStart(env, chatId);
@@ -321,8 +336,7 @@ async function handleBusDirection(
         );
 
         const msg = formatRouteArrival(routeName, filtered, direction);
-        const otherDir = direction === 0 ? 1 : 0;
-        const keyboard = routeDirectionKeyboard(routeId);
+        const keyboard = refreshBusKeyboard(routeId, direction);
         await sendMessage(token, chatId, msg, keyboard);
     } catch (err) {
         await sendMessage(token, chatId, '⚠️ 查詢失敗，請稍後再試');

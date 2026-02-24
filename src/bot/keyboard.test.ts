@@ -7,6 +7,7 @@ import {
     routeDirectionKeyboard,
     stopSelectionKeyboard,
     confirmKeyboard,
+    refreshBusKeyboard,
 } from './keyboard';
 
 describe('inlineKeyboard', () => {
@@ -72,16 +73,72 @@ describe('routeSelectionKeyboard', () => {
 describe('directionToggleKeyboard', () => {
     it('shows 下班 toggle when currently toWork', () => {
         const kb = directionToggleKeyboard('toWork');
-        const btn = kb.inline_keyboard[0][0];
-        expect(btn.callback_data).toBe('toggle:toHome');
-        expect(btn.text).toContain('下班');
+        const allButtons = kb.inline_keyboard.flat();
+        const toggleBtn = allButtons.find((b) => b.callback_data === 'toggle:toHome');
+        expect(toggleBtn).toBeDefined();
+        expect(toggleBtn!.text).toContain('下班');
     });
 
     it('shows 上班 toggle when currently toHome', () => {
         const kb = directionToggleKeyboard('toHome');
-        const btn = kb.inline_keyboard[0][0];
-        expect(btn.callback_data).toBe('toggle:toWork');
-        expect(btn.text).toContain('上班');
+        const allButtons = kb.inline_keyboard.flat();
+        const toggleBtn = allButtons.find((b) => b.callback_data === 'toggle:toWork');
+        expect(toggleBtn).toBeDefined();
+        expect(toggleBtn!.text).toContain('上班');
+    });
+
+    it('includes a refresh button with correct callback for toWork', () => {
+        const kb = directionToggleKeyboard('toWork');
+        const allButtons = kb.inline_keyboard.flat();
+        const refreshBtn = allButtons.find((b) => b.callback_data === 'refresh:commute:toWork');
+        expect(refreshBtn).toBeDefined();
+        expect(refreshBtn!.text).toContain('🔄');
+    });
+
+    it('includes a refresh button with correct callback for toHome', () => {
+        const kb = directionToggleKeyboard('toHome');
+        const allButtons = kb.inline_keyboard.flat();
+        const refreshBtn = allButtons.find((b) => b.callback_data === 'refresh:commute:toHome');
+        expect(refreshBtn).toBeDefined();
+        expect(refreshBtn!.text).toContain('🔄');
+    });
+
+    it('has exactly 2 buttons total', () => {
+        const kb = directionToggleKeyboard('toWork');
+        const allButtons = kb.inline_keyboard.flat();
+        expect(allButtons).toHaveLength(2);
+    });
+});
+
+describe('refreshBusKeyboard', () => {
+    it('includes a refresh button with correct callback', () => {
+        const kb = refreshBusKeyboard('211', 0);
+        const allButtons = kb.inline_keyboard.flat();
+        const refreshBtn = allButtons.find((b) => b.callback_data === 'refresh:bus:211:0');
+        expect(refreshBtn).toBeDefined();
+        expect(refreshBtn!.text).toContain('🔄');
+    });
+
+    it('includes the opposite direction button for 去程 (dir 0)', () => {
+        const kb = refreshBusKeyboard('211', 0);
+        const allButtons = kb.inline_keyboard.flat();
+        const dirBtn = allButtons.find((b) => b.callback_data === 'busdir:211:1');
+        expect(dirBtn).toBeDefined();
+        expect(dirBtn!.text).toContain('返程');
+    });
+
+    it('includes the opposite direction button for 返程 (dir 1)', () => {
+        const kb = refreshBusKeyboard('211', 1);
+        const allButtons = kb.inline_keyboard.flat();
+        const dirBtn = allButtons.find((b) => b.callback_data === 'busdir:211:0');
+        expect(dirBtn).toBeDefined();
+        expect(dirBtn!.text).toContain('去程');
+    });
+
+    it('has exactly 2 buttons total', () => {
+        const kb = refreshBusKeyboard('211', 0);
+        const allButtons = kb.inline_keyboard.flat();
+        expect(allButtons).toHaveLength(2);
     });
 });
 

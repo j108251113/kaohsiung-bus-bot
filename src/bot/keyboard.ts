@@ -46,13 +46,30 @@ export function routeSelectionKeyboard(
 
 /**
  * Direction toggle keyboard after query results.
+ * Includes a refresh button (re-fetch latest data) and a direction toggle.
  */
 export function directionToggleKeyboard(
     currentCommute: 'toWork' | 'toHome',
 ): InlineKeyboardMarkup {
     const opposite = currentCommute === 'toWork' ? 'toHome' : 'toWork';
     const label = opposite === 'toWork' ? '🏢 查上班方向' : '🏠 查下班方向';
-    return inlineKeyboard([{ text: `🔄 ${label}`, data: `toggle:${opposite}` }], 1);
+    return inlineKeyboard([
+        { text: '🔄 更新', data: `refresh:commute:${currentCommute}` },
+        { text: label, data: `toggle:${opposite}` },
+    ], 2);
+}
+
+/**
+ * Refresh keyboard after a /bus route direction query.
+ * Includes a refresh button and a switch to the opposite direction.
+ */
+export function refreshBusKeyboard(routeId: string, direction: number): InlineKeyboardMarkup {
+    const otherDir = direction === 0 ? 1 : 0;
+    const otherLabel = otherDir === 0 ? '➡️ 去程' : '⬅️ 返程';
+    return inlineKeyboard([
+        { text: '🔄 更新', data: `refresh:bus:${routeId}:${direction}` },
+        { text: otherLabel, data: `busdir:${routeId}:${otherDir}` },
+    ], 2);
 }
 
 /**

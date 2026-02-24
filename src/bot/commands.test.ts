@@ -908,4 +908,129 @@ describe('Bot Commands', () => {
             expect(citygpt.searchStops).not.toHaveBeenCalled();
         });
     });
+
+    describe('Refresh Callbacks', () => {
+        const setting = {
+            homeStop: { id: '1', name: 'Home' },
+            workStop: { id: '2', name: 'Work' },
+            matchedRoutes: [{ routeId: 'R1', routeName: 'Route 1', toWorkDirection: 0, toHomeDirection: 1 }],
+            switchHour: 12,
+        };
+
+        it('should handle refresh:commute:toWork by re-fetching and sending a new message', async () => {
+            vi.mocked(userStore.getUserSetting).mockResolvedValue(setting);
+            vi.mocked(ibus.getEstimateTime).mockResolvedValue([
+                { stopid: '1', estimatetime: 5, routeid: 'R1', direction: 0, stopname: 'Home' } as any,
+            ]);
+
+            const query = {
+                id: 'q1',
+                data: 'refresh:commute:toWork',
+                message: { chat: { id: chatId } },
+            } as any;
+
+            await handleCallbackQuery(env, query);
+
+            expect(ibus.getEstimateTime).toHaveBeenCalled();
+            expect(globalFetch).toHaveBeenCalledWith(
+                expect.stringContaining('/sendMessage'),
+                expect.objectContaining({
+                    body: expect.stringContaining('Route 1'),
+                }),
+            );
+        });
+
+        it('should handle refresh:commute:toHome by re-fetching and sending a new message', async () => {
+            vi.mocked(userStore.getUserSetting).mockResolvedValue(setting);
+            vi.mocked(ibus.getEstimateTime).mockResolvedValue([
+                { stopid: '2', estimatetime: 10, routeid: 'R1', direction: 1, stopname: 'Work' } as any,
+            ]);
+
+            const query = {
+                id: 'q1',
+                data: 'refresh:commute:toHome',
+                message: { chat: { id: chatId } },
+            } as any;
+
+            await handleCallbackQuery(env, query);
+
+            expect(ibus.getEstimateTime).toHaveBeenCalled();
+            expect(globalFetch).toHaveBeenCalledWith(
+                expect.stringContaining('/sendMessage'),
+                expect.objectContaining({
+                    body: expect.stringContaining('Route 1'),
+                }),
+            );
+        });
+
+        it('should handle refresh:bus:ROUTEID:DIR by re-fetching and sending a new message', async () => {
+            vi.mocked(citygpt.searchRoutes).mockResolvedValue([
+                { routeid: '211', routename_zh_tw: '紅3' } as any,
+            ]);
+            vi.mocked(ibus.getEstimateTime).mockResolvedValue([
+                { stopid: 'S1', estimatetime: 3, routeid: '211', direction: 0, stopname: '鳳鼻頭' } as any,
+            ]);
+
+            const query = {
+                id: 'q1',
+                data: 'refresh:bus:211:0',
+                message: { chat: { id: chatId } },
+            } as any;
+
+            await handleCallbackQuery(env, query);
+
+            expect(ibus.getEstimateTime).toHaveBeenCalled();
+            expect(globalFetch).toHaveBeenCalledWith(
+                expect.stringContaining('/sendMessage'),
+                expect.objectContaining({
+                    body: expect.stringContaining('鳳鼻頭'),
+                }),
+            );
+        });
+
+        it('should handle refresh:bus for direction 1 (返程)', async () => {
+            vi.mocked(citygpt.searchRoutes).mockResolvedValue([
+                { routeid: '211', routename_zh_tw: '紅3' } as any,
+            ]);
+            vi.mocked(ibus.getEstimateTime).mockResolvedValue([
+                { stopid: 'S2', estimatetime: 8, routeid: '211', direction: 1, stopname: '小港站' } as any,
+            ]);
+
+            const query = {
+                id: 'q1',
+                data: 'refresh:bus:211:1',
+                message: { chat: { id: chatId } },
+            } as any;
+
+            await handleCallbackQuery(env, query);
+
+            expect(ibus.getEstimateTime).toHaveBeenCalled();
+            expect(globalFetch).toHaveBeenCalledWith(
+                expect.stringContaining('/sendMessage'),
+                expect.objectContaining({
+                    body: expect.stringContaining('小港站'),
+                }),
+            );
+        });
+
+        it('should respect rate limit for refresh callbacks', async () => {
+            vi.mocked(ratelimit.checkRateLimit).mockResolvedValueOnce(false);
+
+            const query = {
+                id: 'q1',
+                data: 'refresh:commute:toWork',
+                message: { chat: { id: chatId } },
+            } as any;
+
+            await handleCallbackQuery(env, query);
+
+            expect(globalFetch).toHaveBeenCalledWith(
+                expect.stringContaining('/answerCallbackQuery'),
+                expect.objectContaining({
+                    body: expect.stringContaining('操作太頻繁'),
+                }),
+            );
+            expect(ibus.getEstimateTime).not.toHaveBeenCalled();
+        });
+    });
 });
