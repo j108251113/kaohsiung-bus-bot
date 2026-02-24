@@ -27,7 +27,7 @@ describe('Bot Commands', () => {
     beforeEach(() => {
         vi.resetAllMocks();
         vi.useFakeTimers();
-        vi.setSystemTime(new Date(2025, 0, 1, 10, 0, 0)); // 10 AM -> toWork
+        vi.setSystemTime(new Date('2025-01-01T02:00:00.000Z')); // UTC 02:00 = Taiwan 10:00 → toWork
         globalFetch.mockResolvedValue({
             ok: true,
             json: async () => ({ ok: true }),
