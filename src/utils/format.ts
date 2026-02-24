@@ -58,7 +58,7 @@ export function formatCommuteArrival(
         for (const arr of stopArrivals) {
             const icon = '🚌';
             const routeTag = arr.routeName;
-            const timeStr = formatEta(arr.estimateMin);
+            const timeStr = formatEta(arr.estimateMin, arr.nextTime);
             const plate = arr.plateNumb ? `  🚍 ${arr.plateNumb}` : '';
             lines.push(`${icon} ${routeTag}${plate}   ${timeStr}`);
         }
@@ -96,7 +96,7 @@ export function formatRouteArrival(
 
         for (const arr of sorted) {
             const stopName = arr.stopname || `站牌 ${arr.stopid}`;
-            const timeStr = formatEta(arr.estimatetime);
+            const timeStr = formatEta(arr.estimatetime, arr.nextbustime);
             const plate = arr.carId ? ` 🚍${arr.carId}` : '';
             lines.push(`📍 ${stopName}${plate}  ${timeStr}`);
         }
@@ -118,12 +118,23 @@ export function formatRouteArrival(
 
 /**
  * Format estimated time of arrival.
+ * @param nextTime - next bus departure/arrival time string (e.g. "08:24"); shown when estimatetime is null
  */
-function formatEta(minutes: number | null): string {
+function formatEta(minutes: number | null, nextTime?: string | null): string {
     if (minutes === null || minutes === undefined) {
+        if (nextTime) return `下一班 ${nextTime}`;
         return '未發車';
     }
-    if (minutes <= 0) {
+    if (minutes < 0) {
+        // Bus has already passed this stop (API keeps negative countdown briefly).
+        // nextbustime is null during this window per API observation;
+        // handle theoretically-possible case anyway.
+        if (nextTime) return `下一班 ${nextTime}`;
+        return '剛過站';
+    }
+    if (minutes === 0) {
+        // Bus is at the stop. nextbustime (next bus) is always present per API observation.
+        if (nextTime) return `⚡ 進站中（下一班 ${nextTime}）`;
         return '⚡ 進站中';
     }
     if (minutes === 1) {

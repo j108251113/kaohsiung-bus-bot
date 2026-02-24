@@ -65,7 +65,7 @@ describe('formatCommuteArrival', () => {
         expect(result).toContain('EAL-5733');
     });
 
-    it('shows "進站中" for 0 minutes', () => {
+    it('shows "進站中" for 0 minutes (no nextbustime)', () => {
         const arrivals: EstimateTimeItem[] = [
             {
                 stopid: '10001',
@@ -86,6 +86,90 @@ describe('formatCommuteArrival', () => {
         );
 
         expect(result).toContain('進站中');
+    });
+
+    // ── Bug fix: et=0 with nextbustime ──────────────────────────────────────
+    // Confirmed by API observation: et=0 always has nextbustime present.
+    // The bus is at the stop; we should surface the next bus time too.
+    it('shows next bus time alongside 進站中 when et=0 and nextbustime is set', () => {
+        const arrivals: EstimateTimeItem[] = [
+            {
+                stopid: '10001',
+                stopname: '鳳鼻頭(沿海路)',
+                routeid: '211',
+                direction: 1,
+                estimatetime: 0,
+                nextbustime: '20:31',
+                seqno: 5,
+            },
+        ];
+
+        const result = formatCommuteArrival(
+            arrivals,
+            '鳳鼻頭(沿海路)',
+            '捷運小港站',
+            [sampleRoutes[0]],
+            '🏢 上班',
+        );
+
+        expect(result).toContain('進站中');
+        expect(result).toContain('20:31');
+    });
+
+    // ── Bug fix: et<0 means bus has already passed ───────────────────────────
+    // Confirmed by API observation: et goes negative after the bus passes;
+    // nextbustime is always null during this period.
+    // Should show 剛過站, NOT 進站中.
+    it('shows "剛過站" (not 進站中) when et is negative', () => {
+        const arrivals: EstimateTimeItem[] = [
+            {
+                stopid: '10001',
+                stopname: '鳳鼻頭(沿海路)',
+                routeid: '211',
+                direction: 1,
+                estimatetime: -3,
+                seqno: 5,
+            },
+        ];
+
+        const result = formatCommuteArrival(
+            arrivals,
+            '鳳鼻頭(沿海路)',
+            '捷運小港站',
+            [sampleRoutes[0]],
+            '🏢 上班',
+        );
+
+        expect(result).toContain('剛過站');
+        expect(result).not.toContain('進站中');
+    });
+
+    // ── Bug fix: et<0 with nextbustime (theoretically possible) ─────────────
+    // In practice the API never provides this, but the logic should handle it.
+    it('shows next bus time when et is negative and nextbustime is set', () => {
+        const arrivals: EstimateTimeItem[] = [
+            {
+                stopid: '10001',
+                stopname: '鳳鼻頭(沿海路)',
+                routeid: '211',
+                direction: 1,
+                estimatetime: -1,
+                nextbustime: '21:00',
+                seqno: 5,
+            },
+        ];
+
+        const result = formatCommuteArrival(
+            arrivals,
+            '鳳鼻頭(沿海路)',
+            '捷運小港站',
+            [sampleRoutes[0]],
+            '🏢 上班',
+        );
+
+        expect(result).toContain('下一班 21:00');
+        expect(result).not.toContain('進站中');
+        expect(result).not.toContain('剛過站');
     });
 
     it('shows "即將到站" for 1 minute', () => {
@@ -123,7 +207,7 @@ describe('formatCommuteArrival', () => {
         expect(result).toContain('無到站資料');
     });
 
-    it('handles null estimatetime (未發車)', () => {
+    it('handles null estimatetime without nextbustime (未發車)', () => {
         const arrivals: EstimateTimeItem[] = [
             {
                 stopid: '10001',
@@ -144,6 +228,31 @@ describe('formatCommuteArrival', () => {
         );
 
         expect(result).toContain('未發車');
+    });
+
+    it('shows 下一班 HH:MM when estimatetime is null but nextbustime is available', () => {
+        const arrivals: EstimateTimeItem[] = [
+            {
+                stopid: '10001',
+                stopname: '鳳鼻頭(沿海路)',
+                routeid: '211',
+                direction: 1,
+                estimatetime: null,
+                nextbustime: '08:24',
+                seqno: 5,
+            },
+        ];
+
+        const result = formatCommuteArrival(
+            arrivals,
+            '鳳鼻頭(沿海路)',
+            '捷運小港站',
+            [sampleRoutes[0]],
+            '🏢 上班',
+        );
+
+        expect(result).toContain('下一班 08:24');
+        expect(result).not.toContain('未發車');
     });
 
     it('handles missing stopname (uses empty string)', () => {
@@ -332,6 +441,25 @@ describe('formatRouteArrival', () => {
         expect(result).toContain('無到站資料');
     });
 
+    it('shows 下一班 HH:MM when estimatetime is null but nextbustime is available', () => {
+        const arrivals: EstimateTimeItem[] = [
+            {
+                stopid: '10001',
+                stopname: '捷運小港站',
+                routeid: '211',
+                direction: 0,
+                estimatetime: null,
+                nextbustime: '09:15',
+                seqno: 1,
+            },
+        ];
+
+        const result = formatRouteArrival('紅3', arrivals, 0);
+
+        expect(result).toContain('下一班 09:15');
+        expect(result).not.toContain('未發車');
+    });
+
     it('truncates very long messages', () => {
         // Create many stops
         const arrivals: EstimateTimeItem[] = Array.from({ length: 200 }, (_, i) => ({
@@ -349,8 +477,10 @@ describe('formatRouteArrival', () => {
         expect(result.length).toBeLessThanOrEqual(4096);
         expect(result).toContain('僅顯示部分資料');
     });
-    it('sorts by seqno', () => {
+    it('sorts by seqno and handles missing seqno', () => {
         const arrivals: EstimateTimeItem[] = [
+            { stopid: '3', stopname: 'Stop 3', routeid: '1', direction: 0, estimatetime: 15 } as any, // missing seqno (undefined)
+            { stopid: '4', stopname: 'Stop 4', routeid: '1', direction: 0, estimatetime: 20, seqno: 0 }, // explicit 0
             { stopid: '2', stopname: 'Stop 2', routeid: '1', direction: 0, estimatetime: 5, seqno: 2 },
             { stopid: '1', stopname: 'Stop 1', routeid: '1', direction: 0, estimatetime: 10, seqno: 1 }
         ];
@@ -358,6 +488,10 @@ describe('formatRouteArrival', () => {
         const result = formatRouteArrival('R1', arrivals, 0);
         const idx1 = result.indexOf('Stop 1');
         const idx2 = result.indexOf('Stop 2');
+        const idx3 = result.indexOf('Stop 3');
+        const idx4 = result.indexOf('Stop 4');
+        expect(idx3).toBeLessThan(idx1); // Missing seqno (evaluates to 0) comes first
+        expect(idx4).toBeLessThan(idx1); // 0 seqno comes first
         expect(idx1).toBeLessThan(idx2);
     });
 
