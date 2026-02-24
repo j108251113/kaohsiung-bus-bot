@@ -49,6 +49,17 @@ describe('iBus API', () => {
             expect(globalFetch).toHaveBeenCalled();
         });
 
+        it('should handle missing expires_in in GuestToken response', async () => {
+            globalFetch.mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ access_token: 'valid_token' }) // no expires_in
+            });
+
+            const token = await ibus.getGuestToken();
+            expect(token).toBe('valid_token');
+            expect(globalFetch).toHaveBeenCalled();
+        });
+
         it('should return cached token if still valid', async () => {
             await setupValidCache();
 
@@ -131,6 +142,37 @@ describe('iBus API', () => {
             }));
         });
 
+        it('should handle alternative property names (stopID, stopname_Zh_Tw)', async () => {
+            await setupValidCache();
+
+            const mockApiResponse = {
+                status: 0,
+                data: [[
+                    {
+                        stopID: '99',
+                        stopname_Zh_Tw: 'Stop C',
+                        routeid: 'R2',
+                        direction: '1',
+                        estimatetime: 5,
+                        stopsequence: 1
+                    }
+                ]]
+            };
+
+            globalFetch.mockResolvedValueOnce({
+                ok: true,
+                json: async () => mockApiResponse,
+            });
+
+            const result = await ibus.getEstimateTime([{ id: 'R2', direction: 1 }]);
+
+            expect(result).toHaveLength(1);
+            expect(result[0]).toEqual(expect.objectContaining({
+                stopid: '99',
+                stopname: 'Stop C'
+            }));
+        });
+
         it('should handle null estimate time strings', async () => {
             await setupValidCache();
 
@@ -154,6 +196,39 @@ describe('iBus API', () => {
 
             const result = await ibus.getEstimateTime([{ id: 'R1', direction: 0 }]);
             expect(result[0].estimatetime).toBeNull();
+        });
+
+        it('should handle string estimatetime and invalid strings', async () => {
+            await setupValidCache();
+
+            const mockApiResponse = {
+                status: 0,
+                data: [[
+                    {
+                        stopid: '1',
+                        estimatetime: 'invalid', // should evaluate to null
+                        routeid: 'R1',
+                        direction: '0',
+                        stopsequence: 1
+                    },
+                    {
+                        stopid: '2',
+                        estimatetime: '10', // should parse as 10
+                        routeid: 'R1',
+                        direction: '0',
+                        stopsequence: 2
+                    }
+                ]]
+            };
+
+            globalFetch.mockResolvedValueOnce({
+                ok: true,
+                json: async () => mockApiResponse,
+            });
+
+            const result = await ibus.getEstimateTime([{ id: 'R1', direction: 0 }]);
+            expect(result[0].estimatetime).toBeNull();
+            expect(result[1].estimatetime).toBe(10);
         });
 
         it('should retry on 401', async () => {

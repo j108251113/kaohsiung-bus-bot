@@ -65,7 +65,15 @@ describe('Worker Entry Point (index.ts)', () => {
         expect(globalFetchSpy).toHaveBeenCalledWith(expect.stringContaining('setWebhook'));
 
         globalFetchSpy.mockRestore();
-        globalFetchSpy.mockRestore();
+    });
+
+    it('handles setup-webhook endpoint without token', async () => {
+        const noTokenEnv = { TELEGRAM_BOT_TOKEN: '' } as any;
+        const request = new Request('https://example.com/setup-webhook');
+        const response = await worker.fetch(request, noTokenEnv, {} as any);
+
+        expect(response.status).toBe(500);
+        expect(await response.text()).toBe('TELEGRAM_BOT_TOKEN not set');
     });
 
     it('handles handleMessage error', async () => {

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { handleMessage, handleCallbackQuery } from './commands';
 import * as citygpt from '../api/citygpt';
 import * as ibus from '../api/ibus';
@@ -26,11 +26,17 @@ describe('Bot Commands', () => {
 
     beforeEach(() => {
         vi.resetAllMocks();
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date(2025, 0, 1, 10, 0, 0)); // 10 AM -> toWork
         globalFetch.mockResolvedValue({
             ok: true,
             json: async () => ({ ok: true }),
         });
         vi.mocked(ratelimit.checkRateLimit).mockResolvedValue(true);
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
     });
 
     describe('handleMessage', () => {
@@ -64,6 +70,18 @@ describe('Bot Commands', () => {
                     body: expect.stringContaining('使用說明')
                 })
             );
+        });
+
+        it('should log error on sendMessage failure', async () => {
+            const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => { });
+            globalFetch.mockResolvedValueOnce({
+                ok: false,
+                status: 500,
+                text: async () => 'Internal Server Error'
+            });
+            await handleMessage(env, { chat: { id: chatId }, text: '/help' } as any);
+            expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Telegram API error: 500 Internal Server Error'));
+            consoleErrorSpy.mockRestore();
         });
 
         it('should handle /setup', async () => {
@@ -116,6 +134,16 @@ describe('Bot Commands', () => {
             );
         });
 
+        it('should handle unknown command', async () => {
+            await handleMessage(env, { chat: { id: chatId }, text: 'hello' } as any);
+            expect(globalFetch).toHaveBeenCalledWith(
+                expect.stringContaining('/sendMessage'),
+                expect.objectContaining({
+                    body: expect.stringContaining('看不懂你的指令')
+                })
+            );
+        });
+
         it('should handle /bus command (single match)', async () => {
             // Mock searchRoutes
             vi.mocked(citygpt.searchRoutes).mockResolvedValue([
@@ -129,6 +157,106 @@ describe('Bot Commands', () => {
                 expect.stringContaining('/sendMessage'),
                 expect.objectContaining({
                     body: expect.stringContaining('請選擇方向')
+                })
+            );
+        });
+    });
+
+    describe('Commute Handlers (/go)', () => {
+        it('should handle /go when setting is null', async () => {
+            vi.mocked(userStore.getUserSetting).mockResolvedValue(null);
+            await handleMessage(env, { chat: { id: chatId }, text: '/go' } as any);
+            expect(globalFetch).toHaveBeenCalledWith(
+                expect.stringContaining('/sendMessage'),
+                expect.objectContaining({
+                    body: expect.stringContaining('尚未設定')
+                })
+            );
+        });
+
+        it('should handle toggle callback when setting is unexpectedly null', async () => {
+            vi.mocked(userStore.getUserSetting).mockResolvedValue(null);
+            const query = {
+                id: 'q1',
+                data: 'toggle:toWork',
+                message: { chat: { id: chatId } }
+            } as any;
+            await handleCallbackQuery(env, query);
+            expect(globalFetch).toHaveBeenCalledWith(
+                expect.stringContaining('/sendMessage'),
+                expect.objectContaining({
+                    body: expect.stringContaining('找不到你的設定資料')
+                })
+            );
+        });
+
+        it('should handle /go when matchedRoutes is empty', async () => {
+            vi.mocked(userStore.getUserSetting).mockResolvedValue({
+                homeStop: { id: '1', name: 'Home' },
+                workStop: { id: '2', name: 'Work' },
+                matchedRoutes: [],
+                switchHour: 12
+            });
+            await handleMessage(env, { chat: { id: chatId }, text: '/go' } as any);
+            expect(globalFetch).toHaveBeenCalledWith(
+                expect.stringContaining('/sendMessage'),
+                expect.objectContaining({
+                    body: expect.stringContaining('目前沒有符合的路線資料')
+                })
+            );
+        });
+
+        it('should handle /go API failure in handleGoWithDirection', async () => {
+            vi.mocked(userStore.getUserSetting).mockResolvedValue({
+                homeStop: { id: '1', name: 'Home' },
+                workStop: { id: '2', name: 'Work' },
+                matchedRoutes: [{ routeId: 'R1', routeName: 'Route 1', toWorkDirection: 0, toHomeDirection: 1 }],
+                switchHour: 12
+            });
+            vi.mocked(ibus.getEstimateTime).mockRejectedValue(new Error('API Failure'));
+            await handleMessage(env, { chat: { id: chatId }, text: '/go' } as any);
+            expect(globalFetch).toHaveBeenCalledWith(
+                expect.stringContaining('/sendMessage'),
+                expect.objectContaining({
+                    body: expect.stringContaining('查詢失敗\\n\\n原因: API Failure')
+                })
+            );
+        });
+
+        it('should handle /go when everything is ok', async () => {
+            vi.mocked(userStore.getUserSetting).mockResolvedValue({
+                homeStop: { id: '1', name: 'Home' },
+                workStop: { id: '2', name: 'Work' },
+                matchedRoutes: [{ routeId: 'R1', routeName: 'Route 1', toWorkDirection: 0, toHomeDirection: 1 }],
+                switchHour: 12
+            });
+            vi.mocked(ibus.getEstimateTime).mockResolvedValue([
+                { stopid: '1', estimatetime: 5, routeid: 'R1', direction: 0, stopname: 'Home' } as any
+            ]);
+            await handleMessage(env, { chat: { id: chatId }, text: '/go' } as any);
+            expect(globalFetch).toHaveBeenCalledWith(
+                expect.stringContaining('/sendMessage'),
+                expect.objectContaining({
+                    body: expect.stringContaining('Route 1')
+                })
+            );
+        });
+
+        it('should handle /back when everything is ok', async () => {
+            vi.mocked(userStore.getUserSetting).mockResolvedValue({
+                homeStop: { id: '1', name: 'Home' },
+                workStop: { id: '2', name: 'Work' },
+                matchedRoutes: [{ routeId: 'R1', routeName: 'Route 1', toWorkDirection: 0, toHomeDirection: 1 }],
+                switchHour: 12
+            });
+            vi.mocked(ibus.getEstimateTime).mockResolvedValue([
+                { stopid: '2', estimatetime: 15, routeid: 'R1', direction: 1, stopname: 'Work' } as any
+            ]);
+            await handleMessage(env, { chat: { id: chatId }, text: '/back' } as any);
+            expect(globalFetch).toHaveBeenCalledWith(
+                expect.stringContaining('/sendMessage'),
+                expect.objectContaining({
+                    body: expect.stringContaining('Route 1')
                 })
             );
         });
@@ -156,6 +284,33 @@ describe('Bot Commands', () => {
             );
         });
 
+        it('should handle API failures in handleBus', async () => {
+            vi.mocked(citygpt.searchRoutes).mockRejectedValueOnce(new Error('API Error'));
+            await handleMessage(env, { chat: { id: chatId }, text: '/bus Red' } as any);
+            expect(globalFetch).toHaveBeenCalledWith(
+                expect.stringContaining('/sendMessage'),
+                expect.objectContaining({
+                    body: expect.stringContaining('查詢失敗，請稍後再試')
+                })
+            );
+        });
+
+        it('should handle multiple matches with different master names', async () => {
+            vi.mocked(citygpt.searchRoutes).mockResolvedValue([
+                { routeid: '1', routename_zh_tw: 'Red 1' } as any, // missing masterroutename triggers fallback
+                { routeid: '2', routename_zh_tw: 'Blue 1', masterroutename: 'Blue' } as any
+            ]);
+
+            await handleMessage(env, { chat: { id: chatId }, text: '/bus Color' } as any);
+
+            expect(globalFetch).toHaveBeenCalledWith(
+                expect.stringContaining('/sendMessage'),
+                expect.objectContaining({
+                    body: expect.stringContaining('找到 2 條路線')
+                })
+            );
+        });
+
         it('should group routes by master name', async () => {
             vi.mocked(citygpt.searchRoutes).mockResolvedValue([
                 { routeid: '1', routename_zh_tw: 'Red 1', masterroutename: 'Red' },
@@ -179,9 +334,49 @@ describe('Bot Commands', () => {
                 })
             );
         });
+
+        it('should NOT group routes as sub-routes when masterroutename equals routename_zh_tw (bug fix)', async () => {
+            // Bug scenario: routes have masterroutename === routename_zh_tw.
+            // They should be displayed as separate route choices, not as a "sub-route family".
+            vi.mocked(citygpt.searchRoutes).mockResolvedValue([
+                { routeid: '1', routename_zh_tw: '紅3', masterroutename: '紅3' },
+                { routeid: '2', routename_zh_tw: '紅3延駛', masterroutename: '紅3延駛' }
+            ]);
+
+            await handleMessage(env, { chat: { id: chatId }, text: '/bus 紅3' } as any);
+
+            // Should NOT show 子路線 (sub-route grouping)
+            const callArgs = globalFetch.mock.calls.find(
+                (call) => call[0].includes('/sendMessage')
+            );
+            expect(callArgs).toBeDefined();
+            const body = JSON.parse(callArgs![1].body);
+            expect(body.text).not.toContain('子路線');
+            // Should show "找到 N 條路線" or direct direction selector
+            expect(body.text).toContain('找到 2 條路線');
+        });
     });
 
     describe('Callback Queries', () => {
+        it('should limit rate for callback query', async () => {
+            vi.mocked(ratelimit.checkRateLimit).mockResolvedValueOnce(false);
+            const query = {
+                id: 'q1',
+                data: 'route:1',
+                message: { chat: { id: chatId } }
+            } as any;
+
+            await handleCallbackQuery(env, query);
+
+            expect(globalFetch).toHaveBeenCalledWith(
+                expect.stringContaining('/answerCallbackQuery'),
+                expect.objectContaining({
+                    body: expect.stringContaining('操作太頻繁')
+                })
+            );
+            expect(ratelimit.checkRateLimit).toHaveBeenCalledWith(expect.anything(), chatId, 30);
+        });
+
         it('should handle route selection (route:ID)', async () => {
             vi.mocked(citygpt.searchRoutes).mockResolvedValue([
                 { routeid: '1', routename_zh_tw: 'R1' } as any
@@ -247,6 +442,37 @@ describe('Bot Commands', () => {
                 expect.anything()
             );
         });
+
+        it('should handle cmd:help_bus callback shortcut', async () => {
+            const query = {
+                id: 'q1',
+                data: 'cmd:help_bus',
+                message: { chat: { id: chatId } }
+            } as any;
+            await handleCallbackQuery(env, query);
+            expect(globalFetch).toHaveBeenCalledWith(
+                expect.stringContaining('/sendMessage'),
+                expect.objectContaining({
+                    body: expect.stringContaining('直接輸入路線名稱查詢')
+                })
+            );
+        });
+
+        it('should handle cmd:setup callback shortcut', async () => {
+            vi.mocked(userStore.saveSetupState).mockResolvedValue();
+            const query = {
+                id: 'q1',
+                data: 'cmd:setup',
+                message: { chat: { id: chatId } }
+            } as any;
+            await handleCallbackQuery(env, query);
+            expect(globalFetch).toHaveBeenCalledWith(
+                expect.stringContaining('/sendMessage'),
+                expect.objectContaining({
+                    body: expect.stringContaining('步驟 1/2')
+                })
+            );
+        });
     });
     describe('Setup Flow Text Input', () => {
         it('should handle stop search input (step: select_home)', async () => {
@@ -296,6 +522,37 @@ describe('Bot Commands', () => {
                 expect.stringContaining('/sendMessage'),
                 expect.objectContaining({
                     body: expect.stringContaining('選擇你的 🏢 下車站')
+                })
+            );
+        });
+
+        it('should handle stop search error (step: select_home)', async () => {
+            vi.mocked(userStore.getSetupState).mockResolvedValue({ step: 'select_home' });
+            vi.mocked(citygpt.searchStops).mockRejectedValue(new Error('API Error'));
+
+            await handleMessage(env, { chat: { id: chatId }, text: 'Stop' } as any);
+
+            expect(globalFetch).toHaveBeenCalledWith(
+                expect.stringContaining('/sendMessage'),
+                expect.objectContaining({
+                    body: expect.stringContaining('查詢站牌失敗')
+                })
+            );
+        });
+
+        it('should handle stop search error (step: select_work)', async () => {
+            vi.mocked(userStore.getSetupState).mockResolvedValue({
+                step: 'select_work',
+                homeStop: { id: 'S1', name: 'Home' }
+            });
+            vi.mocked(citygpt.searchStops).mockRejectedValue(new Error('API Error'));
+
+            await handleMessage(env, { chat: { id: chatId }, text: 'Stop' } as any);
+
+            expect(globalFetch).toHaveBeenCalledWith(
+                expect.stringContaining('/sendMessage'),
+                expect.objectContaining({
+                    body: expect.stringContaining('查詢站牌失敗')
                 })
             );
         });
@@ -579,6 +836,76 @@ describe('Bot Commands', () => {
                 chatId,
                 expect.objectContaining({ step: 'select_home' })
             );
+        });
+    });
+
+    describe('Additional Coverage Cases', () => {
+        it('should return on missing chatId or query data', async () => {
+            await handleCallbackQuery(env, { id: 'q1', message: { chat: { id: chatId } } } as any);
+            await handleCallbackQuery(env, { id: 'q1', data: 'data', message: { chat: { id: 0 } } } as any);
+            expect(globalFetch).not.toHaveBeenCalled();
+        });
+
+        it('should handle large number of same-master-name routes (> 10)', async () => {
+            const routes = Array.from({ length: 11 }, (_, i) => ({
+                routeid: `id${i}`,
+                routename_zh_tw: `Red ${i}`,
+                masterroutename: 'Red'
+            })) as any[];
+            vi.mocked(citygpt.searchRoutes).mockResolvedValue(routes);
+
+            await handleMessage(env, { chat: { id: chatId }, text: '/bus Red' } as any);
+
+            expect(globalFetch).toHaveBeenCalledWith(
+                expect.stringContaining('/sendMessage'),
+                expect.objectContaining({
+                    body: expect.stringContaining('找到 11 條路線')
+                })
+            );
+        });
+
+        it('should handle direction 1 and missing route match in direction query', async () => {
+            vi.mocked(citygpt.searchRoutes).mockResolvedValue([]);
+            vi.mocked(ibus.getEstimateTime).mockResolvedValue([
+                { stopid: '1', estimatetime: 5, routeid: '1', direction: 1, stopname: 'Stop 1' } as any
+            ]);
+            const query = {
+                id: 'q1',
+                data: 'busdir:1:1',
+                message: { chat: { id: chatId } }
+            } as any;
+            await handleCallbackQuery(env, query);
+            expect(globalFetch).toHaveBeenCalledWith(
+                expect.stringContaining('/sendMessage'),
+                expect.objectContaining({
+                    body: expect.stringContaining('路線 1')
+                })
+            );
+        });
+
+        it('should format non-Error objects in /go exception', async () => {
+            vi.mocked(userStore.getUserSetting).mockResolvedValue({
+                homeStop: { id: '1', name: 'Home' },
+                workStop: { id: '2', name: 'Work' },
+                matchedRoutes: [{ routeId: 'R1', routeName: 'Route 1', toWorkDirection: 0, toHomeDirection: 1 }],
+                switchHour: 12
+            });
+            vi.mocked(ibus.getEstimateTime).mockRejectedValue('String Error');
+            await handleMessage(env, { chat: { id: chatId }, text: '/go' } as any);
+            expect(globalFetch).toHaveBeenCalledWith(
+                expect.stringContaining('/sendMessage'),
+                expect.objectContaining({
+                    body: expect.stringContaining('原因: String Error')
+                })
+            );
+        });
+
+        it('should return early if no setup state in handleSetupTextInput', async () => {
+            vi.mocked(userStore.getSetupState)
+                .mockResolvedValueOnce({ step: 'select_home' }) // first call returns truthy
+                .mockResolvedValueOnce(null); // second call returns null
+            await handleMessage(env, { chat: { id: chatId }, text: 'Stop' } as any);
+            expect(citygpt.searchStops).not.toHaveBeenCalled();
         });
     });
 });

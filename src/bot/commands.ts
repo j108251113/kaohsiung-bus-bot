@@ -251,8 +251,17 @@ async function handleBus(
         }
 
         // Multiple matches → show selection
-        // Check if they share the same master route name
-        const masterNames = new Set(routes.map((r) => r.masterroutename || r.routename_zh_tw));
+        // Check if they share the same master route name.
+        // Only treat masterroutename as the family key when it explicitly differs from routename_zh_tw
+        // (i.e. it's a true parent name). Otherwise fall back to routeid so distinct routes never
+        // get collapsed into a false "sub-route family".
+        const masterNames = new Set(
+            routes.map((r) =>
+                r.masterroutename && r.masterroutename !== r.routename_zh_tw
+                    ? r.masterroutename
+                    : r.routeid,
+            ),
+        );
         if (masterNames.size === 1 && routes.length <= 10) {
             // Same family (e.g., 紅3 variants)
             await sendMessage(

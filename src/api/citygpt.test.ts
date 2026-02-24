@@ -41,6 +41,19 @@ describe('CityGPT API', () => {
             expect(globalFetch).not.toHaveBeenCalled();
         });
 
+        it('should handle array response directly', async () => {
+            const mockRoutes = [
+                { routeid: '1', routename_zh_tw: 'Route 1', masterroutename: 'R1' }
+            ];
+            globalFetch.mockResolvedValueOnce({
+                ok: true,
+                json: async () => mockRoutes // Array instead of { data: [...] }
+            });
+
+            const routes = await citygpt.getAllRoutes();
+            expect(routes).toEqual(mockRoutes);
+        });
+
         it('should refresh cache after 24 hours', async () => {
             // 1. First fetch
             const mockRoutes = [{ routeid: '1' }];
@@ -79,6 +92,19 @@ describe('CityGPT API', () => {
             const results = await citygpt.searchRoutes('Red');
             expect(results).toHaveLength(1);
             expect(results[0].routeid).toBe('1');
+        });
+
+        it('should handle missing routename_zh_tw or masterroutename', async () => {
+            const mockRoutes = [
+                { routeid: '1' } // Missing both, should fallback to empty strings and not throw
+            ];
+            globalFetch.mockResolvedValue({
+                ok: true,
+                json: async () => ({ data: mockRoutes })
+            });
+
+            const results = await citygpt.searchRoutes('Red');
+            expect(results).toHaveLength(0);
         });
     });
 
@@ -121,6 +147,19 @@ describe('CityGPT API', () => {
             );
         });
 
+        it('should handle array response directly', async () => {
+            const mockStops = [
+                { stopid: '1', stopsequence: 1 }
+            ];
+            globalFetch.mockResolvedValueOnce({
+                ok: true,
+                json: async () => mockStops
+            });
+
+            const result = await citygpt.getStops('R1', 0);
+            expect(result[0].stopid).toBe('1');
+        });
+
         it('should throw on failure', async () => {
             globalFetch.mockResolvedValueOnce({
                 ok: false,
@@ -145,6 +184,19 @@ describe('CityGPT API', () => {
             const result = await citygpt.searchStops('Stop');
             expect(result).toHaveLength(2);
             expect(result.map((s: any) => s.name)).toEqual(['Stop A', 'Stop B']);
+        });
+
+        it('should handle array response directly', async () => {
+            const mockStops = [
+                { stopid: '1', stopname_zh_tw: 'Stop A' }
+            ];
+            globalFetch.mockResolvedValueOnce({
+                ok: true,
+                json: async () => mockStops
+            });
+
+            const result = await citygpt.searchStops('Stop');
+            expect(result).toHaveLength(1);
         });
 
         it('should escape special characters in keyword', async () => {
@@ -217,6 +269,101 @@ describe('CityGPT API', () => {
 
             expect(result).toHaveLength(1);
             expect(result[0].routeId).toBe('R1');
+        });
+
+        it('should handle connecting routes with opposite home direction', async () => {
+            globalFetch.mockImplementation(async (url: string) => {
+                const decoded = decodeURIComponent(url);
+
+                if (decoded.includes("stopname_zh_tw eq 'Home'")) {
+                    return {
+                        ok: true, json: async () => ({
+                            data: [
+                                { routeid: 'R1', direction: 1, stopsequence: 5, stopname_zh_tw: 'Home' },
+                            ]
+                        })
+                    };
+                }
+                if (decoded.includes("stopname_zh_tw eq 'Work'")) {
+                    return {
+                        ok: true, json: async () => ({
+                            data: [
+                                { routeid: 'R1', direction: 1, stopsequence: 10, stopname_zh_tw: 'Work' },
+                            ]
+                        })
+                    };
+                }
+                if (decoded.includes("v_stg_tdx_route")) {
+                    return {
+                        ok: true, json: async () => ({
+                            data: [
+                                { routeid: 'R1', routename_zh_tw: 'Route 1' },
+                            ]
+                        })
+                    };
+                }
+                return { ok: false };
+            });
+
+            const result = await citygpt.findRoutesConnecting('Home', 'Work');
+
+            expect(result).toHaveLength(1);
+            expect(result[0].routeId).toBe('R1');
+            expect(result[0].toWorkDirection).toBe(1);
+            expect(result[0].toHomeDirection).toBe(0);
+        });
+
+        it('should handle array response for stops directly', async () => {
+            globalFetch.mockImplementation(async (url: string) => {
+                const decoded = decodeURIComponent(url);
+
+                if (decoded.includes("stopname_zh_tw eq 'Home'")) {
+                    return {
+                        ok: true, json: async () => [
+                            { routeid: 'R1', direction: 0, stopsequence: 5, stopname_zh_tw: 'Home' },
+                        ] // Array direct
+                    };
+                }
+                if (decoded.includes("stopname_zh_tw eq 'Work'")) {
+                    return {
+                        ok: true, json: async () => [
+                            { routeid: 'R1', direction: 0, stopsequence: 10, stopname_zh_tw: 'Work' },
+                        ] // Array direct
+                    };
+                }
+                if (decoded.includes("v_stg_tdx_route")) {
+                    return {
+                        ok: true, json: async () => ({
+                            data: [
+                                { routeid: 'R1', routename_zh_tw: 'Route 1' },
+                            ]
+                        })
+                    };
+                }
+                return { ok: false };
+            });
+
+            const result = await citygpt.findRoutesConnecting('Home', 'Work');
+            expect(result).toHaveLength(1);
+        });
+
+        it('should throw if stop data fetch fails', async () => {
+            globalFetch.mockImplementation(async (url: string) => {
+                if (url.includes('v_stg_tdx_route')) {
+                    return { ok: true, json: async () => ({ data: [] }) };
+                }
+                return { ok: false, status: 500 };
+            });
+
+            await expect(citygpt.findRoutesConnecting('Home', 'Work'))
+                .rejects.toThrow('Failed to fetch stop data');
+        });
+    });
+
+    describe('API Error Handling', () => {
+        it('getAllRoutes should throw on failure', async () => {
+            globalFetch.mockResolvedValueOnce({ ok: false, status: 500 });
+            await expect(citygpt.getAllRoutes()).rejects.toThrow('Failed to fetch routes');
         });
     });
 });
