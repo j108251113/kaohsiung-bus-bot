@@ -92,6 +92,9 @@ describe('formatCommuteArrival', () => {
     // Confirmed by API observation: et=0 always has nextbustime present.
     // The bus is at the stop; we should surface the next bus time too.
     it('shows next bus time alongside 進站中 when et=0 and nextbustime is set', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2024-01-01T20:00:00+08:00'));
+
         const arrivals: EstimateTimeItem[] = [
             {
                 stopid: '10001',
@@ -114,6 +117,8 @@ describe('formatCommuteArrival', () => {
 
         expect(result).toContain('進站中');
         expect(result).toContain('20:31');
+
+        vi.useRealTimers();
     });
 
     // ── Bug fix: et<0 means bus has already passed ───────────────────────────
@@ -147,6 +152,9 @@ describe('formatCommuteArrival', () => {
     // ── Bug fix: et<0 with nextbustime (theoretically possible) ─────────────
     // In practice the API never provides this, but the logic should handle it.
     it('shows next bus time when et is negative and nextbustime is set', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2024-01-01T20:00:00+08:00'));
+
         const arrivals: EstimateTimeItem[] = [
             {
                 stopid: '10001',
@@ -170,6 +178,8 @@ describe('formatCommuteArrival', () => {
         expect(result).toContain('下一班 21:00');
         expect(result).not.toContain('進站中');
         expect(result).not.toContain('剛過站');
+
+        vi.useRealTimers();
     });
 
     it('shows "即將到站" for 1 minute', () => {
@@ -231,6 +241,9 @@ describe('formatCommuteArrival', () => {
     });
 
     it('shows 下一班 HH:MM when estimatetime is null but nextbustime is available', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2024-01-01T08:00:00+08:00'));
+
         const arrivals: EstimateTimeItem[] = [
             {
                 stopid: '10001',
@@ -253,6 +266,8 @@ describe('formatCommuteArrival', () => {
 
         expect(result).toContain('下一班 08:24');
         expect(result).not.toContain('未發車');
+
+        vi.useRealTimers();
     });
 
     it('handles missing stopname (uses empty string)', () => {
@@ -529,6 +544,9 @@ describe('formatRouteArrival', () => {
     });
 
     it('shows 下一班 HH:MM when estimatetime is null but nextbustime is available', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2024-01-01T08:00:00+08:00'));
+
         const arrivals: EstimateTimeItem[] = [
             {
                 stopid: '10001',
@@ -545,6 +563,8 @@ describe('formatRouteArrival', () => {
 
         expect(result).toContain('下一班 09:15');
         expect(result).not.toContain('未發車');
+
+        vi.useRealTimers();
     });
 
     it('truncates very long messages', () => {
