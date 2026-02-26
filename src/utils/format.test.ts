@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { formatCommuteArrival, formatRouteArrival } from './format';
 import type { EstimateTimeItem, MatchedRoute } from '../types';
 
@@ -396,6 +396,93 @@ describe('formatCommuteArrival', () => {
 
         expect(result).toContain('5分鐘');
         expect(result).not.toContain('10分鐘');
+    });
+
+    describe('stale nextbustime filtering', () => {
+        beforeAll(() => {
+            // Set current time to 08:30 for these tests
+            vi.useFakeTimers();
+            vi.setSystemTime(new Date('2024-01-01T08:30:00+08:00'));
+        });
+
+        afterAll(() => {
+            vi.useRealTimers();
+        });
+
+        it('filters out nextbustime that is strictly in the past (e.g., 08:24 at 08:30)', () => {
+            const arrivals: EstimateTimeItem[] = [
+                {
+                    stopid: '10001',
+                    stopname: '鳳鼻頭(沿海路)',
+                    routeid: '211',
+                    direction: 1,
+                    estimatetime: null,
+                    nextbustime: '08:24', // Stale
+                    seqno: 5,
+                },
+            ];
+
+            const result = formatCommuteArrival(
+                arrivals,
+                '鳳鼻頭(沿海路)',
+                '捷運小港站',
+                sampleRoutes,
+                '🏢 上班',
+            );
+
+            expect(result).not.toContain('08:24');
+            expect(result).toContain('未發車');
+        });
+
+        it('allows nextbustime that is in the future (e.g., 08:45 at 08:30)', () => {
+            const arrivals: EstimateTimeItem[] = [
+                {
+                    stopid: '10001',
+                    stopname: '鳳鼻頭(沿海路)',
+                    routeid: '211',
+                    direction: 1,
+                    estimatetime: null,
+                    nextbustime: '08:45', // Future
+                    seqno: 5,
+                },
+            ];
+
+            const result = formatCommuteArrival(
+                arrivals,
+                '鳳鼻頭(沿海路)',
+                '捷運小港站',
+                sampleRoutes,
+                '🏢 上班',
+            );
+
+            expect(result).toContain('08:45');
+            expect(result).not.toContain('未發車');
+        });
+
+        it('allows nextbustime if it is exactly current time (08:30)', () => {
+            const arrivals: EstimateTimeItem[] = [
+                {
+                    stopid: '10001',
+                    stopname: '鳳鼻頭(沿海路)',
+                    routeid: '211',
+                    direction: 1,
+                    estimatetime: null,
+                    nextbustime: '08:30', // Exact match
+                    seqno: 5,
+                },
+            ];
+
+            const result = formatCommuteArrival(
+                arrivals,
+                '鳳鼻頭(沿海路)',
+                '捷運小港站',
+                sampleRoutes,
+                '🏢 上班',
+            );
+
+            expect(result).toContain('08:30');
+            expect(result).not.toContain('未發車');
+        });
     });
 });
 

@@ -114,6 +114,7 @@ export async function getEstimateTime(
             nextbustime: item.nextbustime,
             carId: item.carId,
             seqno: item.stopsequence,
+            etas: item.etas,
         };
     });
 }

@@ -97,7 +97,8 @@ export function formatRouteArrival(
         for (const arr of sorted) {
             const stopName = arr.stopname || `站牌 ${arr.stopid}`;
             const timeStr = formatEta(arr.estimatetime, arr.nextbustime);
-            const plate = arr.carId ? ` 🚍${arr.carId}` : '';
+            const plateNumb = arr.carId || arr.etas?.[0]?.plateNumb || null;
+            const plate = plateNumb ? ` 🚍${plateNumb}` : '';
             lines.push(`📍 ${stopName}${plate}  ${timeStr}`);
         }
     }
@@ -115,26 +116,70 @@ export function formatRouteArrival(
 
     return result;
 }
+/**
+ * Check if the provided HH:MM time string is strictly in the past compared to now.
+ * Allows a 2-minute grace period.
+ */
+function isTimeExpired(timeStr: string): boolean {
+    const match = timeStr.match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) return false;
+
+    // Convert current time to Taipei time to compare against the API string
+    const now = new Date();
+    const taipeiStr = now.toLocaleTimeString('en-US', {
+        timeZone: 'Asia/Taipei',
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+
+    // In node < 20, hour ranges 01-24 instead of 00-23 when hour12: false
+    // To be safe, just parse them:
+    let [nowH, nowM] = taipeiStr.split(':').map(Number);
+    if (nowH === 24) nowH = 0;
+
+    const h = parseInt(match[1], 10);
+    const m = parseInt(match[2], 10);
+
+    const currentMins = nowH * 60 + nowM;
+    let targetMins = h * 60 + m;
+
+    // Handle overnight edge cases if current time is past midnight (0-3) and target is late night (23)
+    // or current is late night (23) and target is past midnight (0-3)
+    if (nowH < 4 && h > 20) {
+        targetMins -= 24 * 60; // target is yesterday
+    } else if (nowH > 20 && h < 4) {
+        targetMins += 24 * 60; // target is tomorrow
+    }
+
+    // If the scheduled time is earlier than right now with a 2-minute grace period
+    return targetMins < (currentMins - 2);
+}
 
 /**
  * Format estimated time of arrival.
  * @param nextTime - next bus departure/arrival time string (e.g. "08:24"); shown when estimatetime is null
  */
 function formatEta(minutes: number | null, nextTime?: string | null): string {
+    let activeNextTime = nextTime;
+    if (activeNextTime && isTimeExpired(activeNextTime)) {
+        activeNextTime = null;
+    }
+
     if (minutes === null || minutes === undefined) {
-        if (nextTime) return `下一班 ${nextTime}`;
+        if (activeNextTime) return `下一班 ${activeNextTime}`;
         return '未發車';
     }
     if (minutes < 0) {
         // Bus has already passed this stop (API keeps negative countdown briefly).
         // nextbustime is null during this window per API observation;
         // handle theoretically-possible case anyway.
-        if (nextTime) return `下一班 ${nextTime}`;
+        if (activeNextTime) return `下一班 ${activeNextTime}`;
         return '剛過站';
     }
     if (minutes === 0) {
         // Bus is at the stop. nextbustime (next bus) is always present per API observation.
-        if (nextTime) return `⚡ 進站中（下一班 ${nextTime}）`;
+        if (activeNextTime) return `⚡ 進站中（下一班 ${activeNextTime}）`;
         return '⚡ 進站中';
     }
     if (minutes === 1) {
