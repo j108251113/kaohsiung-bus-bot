@@ -347,6 +347,82 @@ describe('CityGPT API', () => {
             expect(result).toHaveLength(1);
         });
 
+        it('should deduplicate routes if the same route is matched multiple times', async () => {
+            globalFetch.mockImplementation(async (url: string) => {
+                const decoded = decodeURIComponent(url);
+                if (decoded.includes("stopname_zh_tw eq 'Home'")) {
+                    return {
+                        ok: true, json: async () => ({
+                            data: [
+                                { routeid: 'R1', direction: 0, stopsequence: 5, stopname_zh_tw: 'Home' },
+                                { routeid: 'R1', direction: 0, stopsequence: 20, stopname_zh_tw: 'Home' }
+                            ]
+                        })
+                    };
+                }
+                if (decoded.includes("stopname_zh_tw eq 'Work'")) {
+                    return {
+                        ok: true, json: async () => ({
+                            data: [
+                                { routeid: 'R1', direction: 0, stopsequence: 10, stopname_zh_tw: 'Work' },
+                                { routeid: 'R1', direction: 0, stopsequence: 25, stopname_zh_tw: 'Work' }
+                            ]
+                        })
+                    };
+                }
+                if (decoded.includes("v_stg_tdx_route")) {
+                    return {
+                        ok: true, json: async () => ({
+                            data: [{ routeid: 'R1', routename_zh_tw: 'Route 1' }]
+                        })
+                    };
+                }
+                return { ok: false };
+            });
+
+            const result = await citygpt.findRoutesConnecting('Home', 'Work');
+            expect(result).toHaveLength(1); // Should be deduplicated
+            expect(result[0].routeId).toBe('R1');
+        });
+
+        it('should correctly handle reversed sequence stops (work sequence < home sequence)', async () => {
+            globalFetch.mockImplementation(async (url: string) => {
+                const decoded = decodeURIComponent(url);
+                if (decoded.includes("stopname_zh_tw eq 'Home'")) {
+                    return {
+                        ok: true, json: async () => ({
+                            data: [
+                                { routeid: 'R2', direction: 0, stopsequence: 15, stopname_zh_tw: 'Home' }
+                            ]
+                        })
+                    };
+                }
+                if (decoded.includes("stopname_zh_tw eq 'Work'")) {
+                    return {
+                        ok: true, json: async () => ({
+                            data: [
+                                { routeid: 'R2', direction: 0, stopsequence: 5, stopname_zh_tw: 'Work' }
+                            ]
+                        })
+                    };
+                }
+                if (decoded.includes("v_stg_tdx_route")) {
+                    return {
+                        ok: true, json: async () => ({
+                            data: [{ routeid: 'R2', routename_zh_tw: 'Route 2' }]
+                        })
+                    };
+                }
+                return { ok: false };
+            });
+
+            const result = await citygpt.findRoutesConnecting('Home', 'Work');
+            expect(result).toHaveLength(1);
+            expect(result[0].routeId).toBe('R2');
+            expect(result[0].toWorkDirection).toBe(1); // Swaps direction due to reverse
+            expect(result[0].toHomeDirection).toBe(0);
+        });
+
         it('should throw if stop data fetch fails', async () => {
             globalFetch.mockImplementation(async (url: string) => {
                 if (url.includes('v_stg_tdx_route')) {
