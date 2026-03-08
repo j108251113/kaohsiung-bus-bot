@@ -140,9 +140,6 @@ export async function findRoutesConnecting(
     toWorkDirection: number;
     toHomeDirection: number;
 }[]> {
-    // 1. Find all stops matching homeStopName
-    // 2. Find all stops matching workStopName
-    // 3. Find common routeid and check sequence
     const homeFilter = encodeURIComponent(`stopname_zh_tw eq '${homeStopName}'`);
     const workFilter = encodeURIComponent(`stopname_zh_tw eq '${workStopName}'`);
 
@@ -165,27 +162,41 @@ export async function findRoutesConnecting(
         toWorkDirection: number;
         toHomeDirection: number;
     }[] = [];
-
-    // Map work stops by routeId and direction for fast lookup
-    const workMap = new Map<string, Stop>();
-    for (const s of workData) {
-        workMap.set(`${s.routeid}:${s.direction}`, s);
-    }
+    const addedRouteIds = new Set<string>();
 
     for (const homeStop of homeData) {
-        const key = `${homeStop.routeid}:${homeStop.direction}`;
-        const workStop = workMap.get(key);
+        if (addedRouteIds.has(homeStop.routeid)) continue;
 
-        if (workStop && homeStop.stopsequence < workStop.stopsequence) {
+        let workStop = workData.find(w =>
+            w.routeid === homeStop.routeid &&
+            w.direction === homeStop.direction &&
+            w.stopsequence > homeStop.stopsequence
+        );
+
+        let isReversed = false;
+
+        if (!workStop) {
+            workStop = workData.find(w =>
+                w.routeid === homeStop.routeid &&
+                w.direction === homeStop.direction &&
+                w.stopsequence < homeStop.stopsequence
+            );
+            if (workStop) {
+                isReversed = true;
+            }
+        }
+
+        if (workStop) {
             const route = allRoutes.find(r => r.routeid === homeStop.routeid);
             if (route) {
                 const oppositeDir = homeStop.direction === 0 ? 1 : 0;
                 results.push({
                     routeId: route.routeid,
                     routeName: route.routename_zh_tw,
-                    toWorkDirection: homeStop.direction,
-                    toHomeDirection: oppositeDir,
+                    toWorkDirection: isReversed ? oppositeDir : homeStop.direction,
+                    toHomeDirection: isReversed ? homeStop.direction : oppositeDir,
                 });
+                addedRouteIds.add(homeStop.routeid);
             }
         }
     }
