@@ -32,16 +32,13 @@ describe('iBus API', () => {
         json: async () => ({ access_token: 'valid_token', expires_in: 3600 })
     };
 
-    /** Helper to populate cache */
-    async function setupValidCache() {
+    /** Helper to mock the token fetch that occurs before estimate fetch */
+    function mockGuestTokenFetch() {
         globalFetch.mockResolvedValueOnce(mockTokenResponse);
-        await ibus.getGuestToken();
-        globalFetch.mockClear();
     }
 
     describe('getGuestToken', () => {
-        it('should fetch a new token if cache is empty', async () => {
-            // Cache is guaranteed empty due to resetModules
+        it('should fetch a new token', async () => {
             globalFetch.mockResolvedValueOnce(mockTokenResponse);
 
             const token = await ibus.getGuestToken();
@@ -60,29 +57,7 @@ describe('iBus API', () => {
             expect(globalFetch).toHaveBeenCalled();
         });
 
-        it('should return cached token if still valid', async () => {
-            await setupValidCache();
 
-            const token = await ibus.getGuestToken();
-            expect(token).toBe('valid_token');
-            expect(globalFetch).not.toHaveBeenCalled();
-        });
-
-        it('should refresh token if expired', async () => {
-            await setupValidCache();
-
-            // Advance time to 11:01 (expired)
-            vi.setSystemTime(new Date(2025, 0, 1, 11, 1, 0));
-
-            globalFetch.mockResolvedValueOnce({
-                ok: true,
-                json: async () => ({ access_token: 'refreshed_token', expires_in: 3600 }),
-            });
-
-            const token = await ibus.getGuestToken();
-            expect(token).toBe('refreshed_token');
-            expect(globalFetch).toHaveBeenCalled();
-        });
 
         it('should throw error on 500 failure', async () => {
             globalFetch.mockResolvedValueOnce({
@@ -98,7 +73,7 @@ describe('iBus API', () => {
 
     describe('getEstimateTime', () => {
         it('should fetch estimate time successfully', async () => {
-            await setupValidCache();
+            mockGuestTokenFetch();
 
             const mockApiResponse = {
                 status: 0,
@@ -143,7 +118,7 @@ describe('iBus API', () => {
         });
 
         it('should handle alternative property names (stopID, stopname_Zh_Tw)', async () => {
-            await setupValidCache();
+            mockGuestTokenFetch();
 
             const mockApiResponse = {
                 status: 0,
@@ -174,7 +149,7 @@ describe('iBus API', () => {
         });
 
         it('should handle null estimate time strings', async () => {
-            await setupValidCache();
+            mockGuestTokenFetch();
 
             const mockApiResponse = {
                 status: 0,
@@ -199,7 +174,7 @@ describe('iBus API', () => {
         });
 
         it('should handle string estimatetime and invalid strings', async () => {
-            await setupValidCache();
+            mockGuestTokenFetch();
 
             const mockApiResponse = {
                 status: 0,
@@ -231,8 +206,8 @@ describe('iBus API', () => {
             expect(result[1].estimatetime).toBe(10);
         });
 
-        it('should retry on 401', async () => {
-            await setupValidCache();
+        it('should throw on 401', async () => {
+            mockGuestTokenFetch();
 
             // 1. Estimate returns 401
             globalFetch.mockResolvedValueOnce({
@@ -242,34 +217,12 @@ describe('iBus API', () => {
                 text: async () => 'Unauthorized',
             });
 
-            // 2. Token refresh
-            globalFetch.mockResolvedValueOnce({
-                ok: true,
-                json: async () => ({ access_token: 'refreshed_token_2', expires_in: 3600 }),
-            });
-
-            // 3. Retry Estimate
-            const mockApiResponse = {
-                status: 0,
-                data: [[
-                    { stopid: '1', estimatetime: 5, routeid: 'R1', direction: '0', stopsequence: 1 }
-                ]]
-            };
-
-            globalFetch.mockResolvedValueOnce({
-                ok: true,
-                json: async () => mockApiResponse,
-            });
-
-            const result = await ibus.getEstimateTime([{ id: '1', direction: 0 }]);
-
-            expect(result).toHaveLength(1);
-            expect(result[0].estimatetime).toBe(5);
-            expect(globalFetch).toHaveBeenCalledTimes(3);
+            await expect(ibus.getEstimateTime([{ id: '1', direction: 0 }])).rejects.toThrow('CustomEstimateTime failed: 401 Unauthorized');
+            expect(globalFetch).toHaveBeenCalledTimes(2);
         });
 
         it('should throw on other errors', async () => {
-            await setupValidCache();
+            mockGuestTokenFetch();
 
             globalFetch.mockResolvedValueOnce({
                 ok: false,
@@ -282,7 +235,7 @@ describe('iBus API', () => {
         });
 
         it('should return empty array on invalid JSON or empty response', async () => {
-            await setupValidCache();
+            mockGuestTokenFetch();
 
             globalFetch.mockResolvedValueOnce({
                 ok: true,
