@@ -1,21 +1,13 @@
-import type { GuestTokenResponse, EstimateTimeItem, EstimateTimeRequest, CityGPTResponse } from '../types';
+import type { GuestTokenResponse, EstimateTimeItem, EstimateTimeRequest } from '../types';
 
 const IBUS_BASE_URL = 'https://ibusplus.tbkc.gov.tw/bsuper';
 const SUBSCRIPTION_KEY = '676ec13f73aa4cdfbdffd6598189593b';
 
-/** Cached guest token */
-let cachedToken: { token: string; expiresAt: number } | null = null;
-
 /**
  * Get a guest JWT token from iBus+ backend.
- * Tokens are cached to avoid unnecessary API calls.
+ * Fetches a new token on every request to avoid stale ETA data.
  */
 export async function getGuestToken(): Promise<string> {
-    // Return cached token if still valid (with 60s buffer)
-    if (cachedToken && Date.now() < cachedToken.expiresAt - 60_000) {
-        return cachedToken.token;
-    }
-
     const resp = await fetch(`${IBUS_BASE_URL}/Token/GuestToken`, {
         method: 'POST',
         headers: {
@@ -35,13 +27,6 @@ export async function getGuestToken(): Promise<string> {
     const data = await resp.json() as GuestTokenResponse;
     const token = data.access_token;
     console.log('[iBus] GuestToken acquired.');
-
-    // Use expires_in from response (usually 3600s), default to 30 mins if missing
-    const lifeTime = (data.expires_in || 1800) * 1000;
-    cachedToken = {
-        token,
-        expiresAt: Date.now() + lifeTime,
-    };
 
     return token;
 }
@@ -71,12 +56,6 @@ export async function getEstimateTime(
     );
 
     if (!resp.ok) {
-        // If 401, clear cached token and retry once
-        if (resp.status === 401 && cachedToken) {
-            console.warn('[iBus] 401 Unauthorized. Clearing token and retrying...');
-            cachedToken = null;
-            return getEstimateTime(routes);
-        }
         console.error(`[iBus] CustomEstimateTime failed: ${resp.status}`, await resp.text());
         throw new Error(`CustomEstimateTime failed: ${resp.status} ${resp.statusText}`);
     }
