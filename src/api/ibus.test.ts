@@ -231,7 +231,38 @@ describe('iBus API', () => {
                 text: async () => 'Error',
             });
 
-            await expect(ibus.getEstimateTime([])).rejects.toThrow('CustomEstimateTime failed: 500 Server Error');
+            await expect(ibus.getEstimateTime([{ id: '1', direction: 0 }])).rejects.toThrow('CustomEstimateTime failed: 500 Server Error');
+        });
+
+        it('should send one request per route/direction instead of batching', async () => {
+            mockGuestTokenFetch();
+
+            const respFor = (routeid: string, direction: string) => ({
+                ok: true,
+                json: async () => ({
+                    status: 0,
+                    data: [[{ stopid: `${routeid}-${direction}`, routeid, direction, estimatetime: 3, stopsequence: 1 }]],
+                }),
+            });
+            globalFetch.mockResolvedValueOnce(respFor('211', '0'));
+            globalFetch.mockResolvedValueOnce(respFor('2111', '1'));
+
+            const result = await ibus.getEstimateTime([
+                { id: '211', direction: 0 },
+                { id: '2111', direction: 1 },
+            ]);
+
+            // 1 token + 2 estimate requests, each with a single-item body
+            expect(globalFetch).toHaveBeenCalledTimes(3);
+            const bodies = globalFetch.mock.calls.slice(1).map((c: any[]) => JSON.parse(c[1].body));
+            expect(bodies).toEqual([[{ id: '211', direction: 0 }], [{ id: '2111', direction: 1 }]]);
+            expect(result.map((r: any) => r.stopid)).toEqual(['211-0', '2111-1']);
+        });
+
+        it('should return empty array without any request when no routes are given', async () => {
+            const result = await ibus.getEstimateTime([]);
+            expect(result).toEqual([]);
+            expect(globalFetch).not.toHaveBeenCalled();
         });
 
         it('should return empty array on invalid JSON or empty response', async () => {
@@ -242,7 +273,7 @@ describe('iBus API', () => {
                 json: async () => ({ status: 0, data: null }), // Invalid data format
             });
 
-            const result = await ibus.getEstimateTime([]);
+            const result = await ibus.getEstimateTime([{ id: '1', direction: 0 }]);
             expect(result).toEqual([]);
         });
     });

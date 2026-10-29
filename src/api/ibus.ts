@@ -40,8 +40,21 @@ export async function getGuestToken(): Promise<string> {
 export async function getEstimateTime(
     routes: EstimateTimeRequest[],
 ): Promise<EstimateTimeItem[]> {
+    if (routes.length === 0) return [];
+
     const token = await getGuestToken();
 
+    // The API returns stale / inconsistent ETAs (minutes to 30+ minutes old, wrong
+    // plates) when several route/direction pairs are batched into one request, while
+    // single-pair requests match the official iBus+ data. So query each pair separately.
+    const perRoute = await Promise.all(routes.map((r) => fetchEstimateTime(token, r)));
+    return perRoute.flat();
+}
+
+async function fetchEstimateTime(
+    token: string,
+    route: EstimateTimeRequest,
+): Promise<EstimateTimeItem[]> {
     const resp = await fetch(
         `${IBUS_BASE_URL}/Extended/Dal/CustomEstimateTime?extraType=All`,
         {
@@ -51,7 +64,7 @@ export async function getEstimateTime(
                 'Ocp-Apim-Subscription-Key': SUBSCRIPTION_KEY,
                 'Authorization': `Bearer ${token}`,
             },
-            body: JSON.stringify(routes),
+            body: JSON.stringify([route]),
         },
     );
 
