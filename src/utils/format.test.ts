@@ -413,6 +413,18 @@ describe('formatCommuteArrival', () => {
         expect(result).not.toContain('10分鐘');
     });
 
+    it('does not match a different stop whose name merely contains the origin name', () => {
+        const arrivals: EstimateTimeItem[] = [
+            { stopid: '1', stopname: '小港站', routeid: '211', direction: 0, estimatetime: 20, seqno: 1 },
+            { stopid: '2', stopname: '捷運小港站', routeid: '211', direction: 0, estimatetime: 4, seqno: 3 },
+        ];
+
+        const result = formatCommuteArrival(arrivals, '小港站', '鳳鼻頭', sampleRoutes, '🏠 下班');
+
+        expect(result).toContain('20分鐘');
+        expect(result).not.toContain('4分鐘');
+    });
+
     describe('stale nextbustime filtering', () => {
         beforeAll(() => {
             // Set current time to 08:30 for these tests

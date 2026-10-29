@@ -30,7 +30,8 @@ export function formatCommuteArrival(
 
         for (const arrival of routeArrivals) {
             const stopName = arrival.stopname || '';
-            if (!stopName.includes(originStopName) && originStopName !== stopName) {
+            // Exact match only: "小港站" must not match "捷運小港站" (a different stop)
+            if (stopName !== originStopName) {
                 continue;
             }
 
